@@ -1,10 +1,39 @@
 # M0 native media probe
 
-This disposable spike implements the first connection slice of the
+This disposable spike implements the connection and local capture/preview slices of the
 [M0 feasibility plan](../../docs/docs/superpowers/plans/2026-10-24-m0-media-feasibility.md).
 It uses the real native LiveKit SDK, without a browser or cloud account.
 
-## Run locally
+## Native preview window
+
+On macOS, run `./scripts/run-media-lab.sh` from the repository root. The script
+builds the optional `desktop` feature, creates an ad hoc signed development app
+in `target/Whisk Media Lab.app`, and opens it. The icon is the supplied Whisk
+asset. This is a media feasibility shell, not the messaging application.
+
+- **Test video surface** renders a local BGRA test pattern through GPUI.
+- **Refresh sources** checks existing screen-recording access, then discovers
+  displays and titled windows on a background worker.
+- Select a source to request a 1280×720, 30 FPS local preview.
+- **Stop preview** clears the image and invalidates pending starts. A full command
+  queue cannot discard the cancellation signal; the worker also checks generation.
+
+Permission checks never request access automatically. If access is not granted,
+the window shows System Settings instructions. Granting it is a manual operator
+step; restart the app if macOS requires it. Capture callbacks keep only the latest
+frame; the native queue and renderer queue are each bounded to two. BGRA row
+padding is removed before CPU upload; retired GPU images are released after the
+current window update. There is no zero-copy claim.
+
+Pinned integration: ScreenCaptureKit Rust bindings 11.1.0 and GPUI 0.2.2. GPUI
+uses `runtime_shaders` so Command Line Tools can compile without the full Xcode
+Metal compiler. `build.rs` resolves Swift compatibility libraries from the active
+`swiftc` toolchain and adds its runtime search paths. This development app is not
+signed/notarized for distribution and remains dependent on the build toolchain;
+release packaging is still M7 work. Native API waits run on a worker and may take
+up to the bindings' default 30-second completion deadline.
+
+## Connection probe
 
 Requirements: Rust 1.99.0, Apple Command Line Tools on macOS, Python 3, and
 running Docker with Compose. macOS arm64 is the only verified build so far.
@@ -70,11 +99,28 @@ not expose raw signaling/ICE candidate-pair telemetry and does not prove that UD
 or TURN is usable; closed-port tests exercise signaling failures only. A joined
 room also does not prove working audio/video.
 
+## Additional native-preview evidence — 2026-10-24
+
+- ScreenCaptureKit and GPUI build/link on macOS arm64 using Command Line Tools.
+- Ten deterministic tests pass, including permission gating, padded native rows,
+  invalid frame bounds, terminal errors surviving late callbacks, and a slow
+  viewer consuming 180 frames with a queue depth of at most two.
+- The packaged app opens; clicking the test button renders the GPU surface and
+  Stop clears it. Refresh reports this machine's ungranted screen access.
+- Native screen pixels remain unverified because capture access is not granted.
+- Independent review found an active-window image cleanup issue; cleanup now
+  defers until GPUI restores the window. Pattern/Stop cycling was checked manually;
+  there is no automated GPU-allocation regression test.
+- Current upstream `block` and `proc-macro-error2` versions emit Rust future-
+  compatibility warnings. They do not fail current checks; resolve before release.
+
 ## Remaining M0 gates
 
-- Task 2: native screen/window discovery, permission-denial handling and capture.
+- Task 2: exercise display/window capture and revocation with actual granted OS
+  permission; the native adapter, permission-denial path and frame handoff exist.
 - Task 3: captured/generated video publishing, measured codec selection/fallback.
-- Task 4: pinned GPUI integration and bounded decoded-frame rendering.
+- Task 4: connect the pinned, bounded GPUI preview to decoded remote frames.
+  The local renderer and GPU pattern have been exercised; remote decode has not.
 - Task 5: two concurrent publishers, selectable viewer, ten-minute measurements.
 - Verify actual microphone publish/playback and audio continuity while switching
   streams before declaring the milestone complete.

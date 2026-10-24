@@ -8,9 +8,21 @@ instances; each instance hosts one community in v1.
 
 ## Current build
 
-Implementation has started with **M0 Task 1: native LiveKit connection probe**.
-The Rust workspace contains `media-spike`, a disposable command-line diagnostic
-for the media feasibility gate. The desktop application and backend are pending.
+Implementation is in **M0: native media feasibility**. The workspace now has a
+real LiveKit connection probe and a runnable **Whisk Media Lab** GPUI window with
+the provided icon, source discovery, local screen/window preview, and a GPU test
+pattern. The production messaging desktop and backend are pending.
+
+On macOS, build and open the preview from this checkout:
+
+```sh
+./scripts/run-media-lab.sh
+```
+
+It creates `target/Whisk Media Lab.app`. Capture starts only when you select a
+source; this build does not broadcast it. Screen access is checked without
+opening a permission prompt. If macOS denies access, the window explains how to
+allow it manually and retry.
 
 - [Run the native probe](spikes/media/README.md)
 - [Product requirements](docs/docs/prd.md)
@@ -32,9 +44,9 @@ macOS needs Apple Command Line Tools and the configured `-ObjC` linker flag.
 Other platform builds and media capabilities have not been verified yet.
 
 ```sh
-cargo test --workspace --locked
+cargo test --workspace --all-features --locked
 cargo fmt --all --check
-cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 ```
 
 Live SFU tests are explicit opt-in tests; follow the probe README to run them.
