@@ -156,7 +156,7 @@ room also does not prove working audio/video.
 
 ## Network-video evidence — 2026-10-24
 
-- Twenty deterministic tests pass; six explicitly invoked live tests pass.
+- Twenty-one deterministic tests pass; seven explicitly invoked live tests pass.
 - [Three-second native loopback report](results/2026-10-24-macos-arm64-h264-loopback.json):
   88 submitted / 88 decoded frames, 1280×720, H.264, VideoToolbox encoder/decoder.
 - The actual network test window rendered the decoded warm-orange pattern and
@@ -169,7 +169,7 @@ room also does not prove working audio/video.
   travels through the frame channel and survives sender closure. Its regression
   test failed before the repair, then passed.
 
-Run all six opt-in SFU tests with `./scripts/test-native-media.sh`. This operator
+Run all seven opt-in SFU tests with `./scripts/test-native-media.sh`. This operator
 script issues fresh local fixture tokens without printing them; tests sharing
 identities serialize. Tests still require the explicitly started local Docker SFU
 and do not contact a cloud account. Stop the fixture when finished.
@@ -181,6 +181,31 @@ than ten minutes as insufficient. This helper is not connected to hardware
 CPU/GPU/latency measurements or GPUI presentation counters yet; its duration flag
 alone is not a capability certification.
 
+## Two-publisher focus probe
+
+```sh
+export LIVEKIT_URL=ws://127.0.0.1:7880
+export LIVEKIT_PUBLISH_TOKEN="$(python3 spikes/media/fixture/token.py --publisher)"
+export LIVEKIT_SECOND_PUBLISH_TOKEN="$(python3 spikes/media/fixture/token.py --publisher)"
+export LIVEKIT_TOKEN="$(python3 spikes/media/fixture/token.py)"
+cargo run --locked -p media-spike -- --switch
+unset LIVEKIT_PUBLISH_TOKEN LIVEKIT_SECOND_PUBLISH_TOKEN LIVEKIT_TOKEN
+```
+
+Two independently authenticated native publishers keep sending distinct generated
+720p30 patterns for both phases. The viewer consumes one native stream, closes
+its sink, and switches to the other. Publication IDs and decoded color checks
+verify focus isolation. This short software probe is not the full ten-minute
+multi-stream hardware/audio benchmark.
+
+The [recorded four-second run](results/2026-10-24-macos-arm64-two-publishers.json)
+submitted 120 frames from each publisher and decoded 54 / 60 frames in the
+respective focus windows, with zero wrong-source frames. Received counts include
+only the focused stream, so subtracting them from both publishers' combined
+submission count would not be a valid drop-rate calculation. Audio and quality
+certification flags remain false. Both SFU subscriptions stay active in this M0
+probe; background subscription/layer adaptation remains future M5 work.
+
 ## Remaining M0 gates
 
 - Task 2: exercise display/window capture and revocation with actual granted OS
@@ -189,7 +214,8 @@ alone is not a capability certification.
   H.264 publish/decode and conservative profile-policy tests exist.
 - Task 4: instrument frame timing and GPU presentation/copy metrics. The remote
   decoded frame → GPUI bridge has now been exercised in the network window.
-- Task 5: two concurrent publishers, selectable viewer, ten-minute measurements.
+- Task 5: ten-minute hardware measurements with real capture and audio
+  continuity; the two-synthetic-publisher focus switch is now exercised.
 - Verify actual microphone publish/playback and audio continuity while switching
   streams before declaring the milestone complete.
 - Record OS/hardware/driver/codec details, frame drops, latency and CPU/GPU use;

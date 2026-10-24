@@ -6,9 +6,36 @@ async fn main() -> ExitCode {
     let args: Vec<_> = env::args().skip(1).collect();
     if args == ["--help"] {
         println!(
-            "Whisk M0 native LiveKit connection probe\n\nSet LIVEKIT_URL and LIVEKIT_TOKEN, then run media-spike.\nOutputs JSON after a 2-second observation and bounded disconnect.\nConnection deadline: 10s; close deadline: 5s. No media certification.\nUse --loopback with LIVEKIT_PUBLISH_TOKEN and LIVEKIT_TOKEN for a 3-second native H.264 SFU test."
+            "Whisk M0 native LiveKit connection probe\n\nSet LIVEKIT_URL and LIVEKIT_TOKEN, then run media-spike.\nOutputs JSON after a 2-second observation and bounded disconnect.\nConnection deadline: 10s; close deadline: 5s. No media certification.\nUse --loopback with LIVEKIT_PUBLISH_TOKEN and LIVEKIT_TOKEN for a 3-second native H.264 SFU test.\nUse --switch with LIVEKIT_SECOND_PUBLISH_TOKEN to test two publishers and viewer focus switching."
         );
         return ExitCode::SUCCESS;
+    }
+    if args == ["--switch"] {
+        let url = env::var("LIVEKIT_URL").unwrap_or_default();
+        let first = env::var("LIVEKIT_PUBLISH_TOKEN").unwrap_or_default();
+        let second = env::var("LIVEKIT_SECOND_PUBLISH_TOKEN").unwrap_or_default();
+        let viewer = env::var("LIVEKIT_TOKEN").unwrap_or_default();
+        match media_spike::switching::run_switch_probe(
+            &url,
+            &first,
+            &second,
+            &viewer,
+            Duration::from_secs(2),
+        )
+        .await
+        {
+            Ok(report) => {
+                println!(
+                    "{}",
+                    serde_json::to_string(&report).expect("serializable switching report")
+                );
+                return ExitCode::SUCCESS;
+            }
+            Err(error) => {
+                eprintln!("{error}");
+                return ExitCode::FAILURE;
+            }
+        }
     }
     if args == ["--loopback"] {
         let url = env::var("LIVEKIT_URL").unwrap_or_default();
