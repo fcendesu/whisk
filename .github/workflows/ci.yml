@@ -16,6 +16,11 @@ jobs:
         run: cargo fmt --all --check
       - name: Test deterministic probe behavior
         run: cargo test --workspace --all-features --locked
+      - name: Test resource sampler filtering
+        run: python3 -m unittest discover -s scripts -p 'test_*.py'
+      - name: Check operator shell scripts
+        run: |
+          for script in scripts/*.sh; do sh -n "$script"; done
       - name: Build native preview
         run: cargo build --locked -p media-spike --features desktop --bin whisk-desktop-spike
       - name: Lint native targets

@@ -1,0 +1,103 @@
+{
+  "submitted_frames": [
+    35908,
+    35900
+  ],
+  "received_size": [
+    [
+      1920,
+      1080
+    ],
+    [
+      1920,
+      1080
+    ]
+  ],
+  "requested_profile": "p1080_f60",
+  "requested_fps": 60,
+  "frame_age_samples": 35872,
+  "invalid_timestamps": 0,
+  "frame_age_p50_ms": 37,
+  "frame_age_p95_ms": 45,
+  "frame_age_max_ms": 294,
+  "encoder": [
+    "VideoToolbox",
+    "VideoToolbox"
+  ],
+  "decoder": [
+    "VideoToolbox",
+    "VideoToolbox"
+  ],
+  "phase_duration_ms": [
+    300003,
+    300004
+  ],
+  "received_frames": [
+    17996,
+    17876
+  ],
+  "wrong_source_frames": 0,
+  "duration_ms": 600015,
+  "audio_verified": true,
+  "audible_audio_frames": [
+    29995,
+    29995
+  ],
+  "max_audio_gap_ms": 132,
+  "tone_frequency_hz": 440.11585264210703,
+  "microphone_verified": false,
+  "audio_source": "generated_440hz_pcm",
+  "quality_certified": false,
+  "publisher_transports": [
+    [
+      {
+        "protocol": "udp",
+        "local_candidate_type": "prflx",
+        "remote_candidate_type": "host",
+        "state": "succeeded",
+        "nominated": true,
+        "rtt_ms": 1.0,
+        "bytes_sent": 20500919,
+        "bytes_received": 1317
+      }
+    ],
+    [
+      {
+        "protocol": "udp",
+        "local_candidate_type": "host",
+        "remote_candidate_type": "prflx",
+        "state": "succeeded",
+        "nominated": true,
+        "rtt_ms": 1.0,
+        "bytes_sent": 12125471,
+        "bytes_received": 18772351
+      }
+    ]
+  ],
+  "viewer_transports": [
+    [
+      {
+        "protocol": "udp",
+        "local_candidate_type": "prflx",
+        "remote_candidate_type": "host",
+        "state": "succeeded",
+        "nominated": true,
+        "rtt_ms": 1.0,
+        "bytes_sent": 250262,
+        "bytes_received": 29140298
+      }
+    ],
+    [
+      {
+        "protocol": "udp",
+        "local_candidate_type": "prflx",
+        "remote_candidate_type": "host",
+        "state": "succeeded",
+        "nominated": true,
+        "rtt_ms": 1.0,
+        "bytes_sent": 250262,
+        "bytes_received": 29140298
+      }
+    ]
+  ]
+}

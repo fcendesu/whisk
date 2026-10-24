@@ -8,7 +8,7 @@ use media_spike::{
 };
 use std::{
     sync::{Arc, atomic::Ordering},
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tokio::sync::watch;
 
@@ -21,6 +21,8 @@ struct MediaLab {
     preview: Option<Arc<RenderImage>>,
     status: String,
     selected: Option<SourceId>,
+    metrics: Option<(Instant, media_spike::ui_metrics::UiFrameMetrics)>,
+    stats_status: String,
 }
 impl MediaLab {
     fn new(cx: &mut Context<Self>) -> Self {
@@ -51,6 +53,8 @@ impl MediaLab {
             preview: None,
             status: "Ready. Discover a source or render the test pattern.".into(),
             selected: None,
+            metrics: None,
+            stats_status: String::new(),
         }
     }
     fn poll(&mut self, cx: &mut Context<Self>) {
@@ -58,6 +62,14 @@ impl MediaLab {
         while let Ok(event) = self.worker.events.try_recv() {
             let generation = self.worker.generation.load(Ordering::Acquire);
             match event {
+                Event::MetricsSaved(saved) => {
+                    self.stats_status = if saved {
+                        "Last UI measurement saved beside the app."
+                    } else {
+                        "Last UI measurement could not be saved."
+                    }
+                    .into();
+                }
                 Event::Sources(id, result) if id == generation => match result {
                     Ok(sources) => {
                         self.status = format!(
@@ -74,6 +86,10 @@ impl MediaLab {
                 Event::Started(id, result) if id == generation => match result {
                     Ok(frames) => {
                         self.frames = Some(frames);
+                        self.metrics = Some((
+                            Instant::now(),
+                            media_spike::ui_metrics::UiFrameMetrics::new("local_capture"),
+                        ));
                         self.status =
                             "Local preview active · 720p30 requested · Not broadcasting".into();
                     }
@@ -84,9 +100,18 @@ impl MediaLab {
                 },
                 Event::NetworkStarted(id, frames, captured) if id == generation => {
                     self.frames = Some(frames);
+                    self.metrics = Some((
+                        Instant::now(),
+                        media_spike::ui_metrics::UiFrameMetrics::new(if captured {
+                            "captured_network"
+                        } else {
+                            "generated_network"
+                        }),
+                    ));
                     self.status = if captured { "Publishing selected window → H.264 → configured SFU → native decode → GPUI. Stops after 30 seconds." } else { "Native H.264 → configured SFU → native decode → GPUI. Sending a generated pattern only; this test lasts 30 seconds." }.into();
                 }
                 Event::NetworkFinished(id, result) if id == generation => {
+                    self.finish_metrics();
                     self.frames = None;
                     self.status = match result {
                         Ok(message) | Err(message) => message,
@@ -106,6 +131,7 @@ impl MediaLab {
                 changed = true;
             }
             Some(FrameEvent::Finished(message)) => {
+                self.finish_metrics();
                 self.frames = None;
                 self.status = message;
                 changed = true;
@@ -122,12 +148,35 @@ impl MediaLab {
         }
     }
     fn clear_preview(&mut self, cx: &mut Context<Self>) {
+        self.finish_metrics();
         self.frames = None;
         self.queue = FrameQueue::default();
         if let Some(old) = self.preview.take() {
             // Defer until GPUI restores the current window to App.windows.
             cx.defer(move |cx| cx.drop_image(old, None));
         }
+    }
+    fn finish_metrics(&mut self) {
+        let Some((started, metrics)) = self.metrics.take() else {
+            return;
+        };
+        let Ok(exe) = std::env::current_exe() else {
+            self.stats_status = "UI measurement path unavailable.".into();
+            return;
+        };
+        let path = media_spike::ui_metrics::measurement_path(&exe);
+        let report = metrics.finish(started.elapsed().as_millis() as u64);
+        self.stats_status = if self
+            .worker
+            .commands
+            .try_send(Command::SaveMetrics(path, report))
+            .is_ok()
+        {
+            "UI measurement queued for saving."
+        } else {
+            "UI measurement not saved: worker queue is full."
+        }
+        .into();
     }
     fn stop(&mut self, cx: &mut Context<Self>) {
         self.worker.next_generation();
@@ -207,6 +256,8 @@ impl MediaLab {
         cx.notify();
     }
     fn set_frame(&mut self, frame: Arc<VideoFrame>, cx: &mut Context<Self>) {
+        let preparation_started = Instant::now();
+        let bytes = frame.bgra.len();
         enqueue_latest(&mut self.queue, frame);
         if let Some(frame) = current_frame(&self.queue)
             && let Some(buffer) =
@@ -214,6 +265,16 @@ impl MediaLab {
         {
             // RenderImage expects BGRA despite image::RgbaImage's type name.
             let new = Arc::new(RenderImage::new(vec![image::Frame::new(buffer)]));
+            if let Some((_, metrics)) = self.metrics.as_mut() {
+                metrics.prepared(
+                    bytes,
+                    preparation_started
+                        .elapsed()
+                        .as_micros()
+                        .min(u32::MAX as u128) as u32,
+                    self.queue.len(),
+                );
+            }
             if let Some(old) = self.preview.replace(new) {
                 // Defer until GPUI restores the current window to App.windows.
                 cx.defer(move |cx| cx.drop_image(old, None));
@@ -222,6 +283,10 @@ impl MediaLab {
     }
     fn pattern(&mut self, cx: &mut Context<Self>) {
         self.stop(cx);
+        self.metrics = Some((
+            Instant::now(),
+            media_spike::ui_metrics::UiFrameMetrics::new("static_test_pattern"),
+        ));
         let colors = [
             [0x69, 0xb8, 0xf8, 255],
             [0x83, 0x82, 0x67, 255],
@@ -248,6 +313,9 @@ impl MediaLab {
 }
 impl Render for MediaLab {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if let Some((_, metrics)) = self.metrics.as_mut() {
+            metrics.tree_built();
+        }
         div().size_full().flex().bg(rgb(0x161a20)).text_color(rgb(0xe8e9ec)).font_family(".AppleSystemUIFont")
             .child(div().w(px(76.)).flex_shrink_0().h_full().flex().flex_col().items_center().pt_6().gap_4().bg(rgb(0x101318))
                 .child(img(self.icon.clone()).size(px(48.)).rounded_xl())
@@ -280,6 +348,7 @@ impl Render for MediaLab {
                     .child(div().id("network").rounded_md().px_4().py_3().bg(rgb(0x303945)).cursor_pointer().child("Test network video").on_click(cx.listener(|this, _, _, cx| this.network(cx))))
                     .child(div().id("publish-selected").rounded_md().px_4().py_3().bg(rgb(0x48513e)).cursor_pointer().child("Publish selected window").on_click(cx.listener(|this, _, _, cx| this.publish_selected(cx))))
                     .child(div().id("stop").rounded_md().px_4().py_3().bg(rgb(0x303945)).cursor_pointer().child("Stop preview").on_click(cx.listener(|this, _, _, cx| this.stop(cx)))))
+                .child(div().text_xs().text_color(rgb(0x8e98a7)).child(if self.stats_status.is_empty() {"Stop preview saves UI metrics. Wait for save confirmation before closing.".into()} else {self.stats_status.clone()}))
                 .child(div().text_xs().text_color(rgb(0x727e90)).child("M0 feasibility build · ScreenCaptureKit → bounded frame handoff → GPUI · Voice and messaging are not connected yet.")))
     }
 }

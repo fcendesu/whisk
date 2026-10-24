@@ -8,3 +8,4 @@ pub mod render;
 pub mod room;
 pub mod switching;
 pub mod transport;
+pub mod ui_metrics;

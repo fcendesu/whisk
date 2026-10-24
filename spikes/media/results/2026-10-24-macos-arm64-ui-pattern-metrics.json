@@ -1,0 +1,12 @@
+{
+  "mode": "static_test_pattern",
+  "window_ms": 4539,
+  "cpu_prepared_frames": 1,
+  "ui_bgra_bytes_copied": 921600,
+  "max_queue_depth": 1,
+  "view_tree_builds": 3,
+  "image_preparation_p95_us": 174,
+  "observed_preparation_fps": 0.2203128442388191,
+  "gpu_presented_frames": null,
+  "quality_certified": false
+}

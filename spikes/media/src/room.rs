@@ -56,6 +56,7 @@ pub struct ProbeReport {
     pub states: Vec<StateSample>,
     pub ice_detail: &'static str,
     pub media_verified: bool,
+    pub ice_policy: IcePolicy,
 }
 
 pub struct ProbeRoom {
@@ -82,6 +83,15 @@ pub async fn connect_probe_with_timeout(
     token: &str,
     deadline: Duration,
 ) -> Result<ProbeRoom, ProbeError> {
+    connect_probe_with_policy(url, token, deadline, IcePolicy::All).await
+}
+
+pub async fn connect_probe_with_policy(
+    url: &str,
+    token: &str,
+    deadline: Duration,
+    policy: IcePolicy,
+) -> Result<ProbeRoom, ProbeError> {
     let endpoint = Url::parse(url).map_err(|_| ProbeError::InvalidInput)?;
     if !matches!(endpoint.scheme(), "ws" | "wss")
         || endpoint.host_str().is_none()
@@ -98,6 +108,10 @@ pub async fn connect_probe_with_timeout(
     let mut options = RoomOptions::default();
     options.join_retries = 0;
     options.connect_timeout = deadline;
+    options.rtc_config.ice_transport_type = match policy {
+        IcePolicy::All => livekit::webrtc::peer_connection_factory::IceTransportsType::All,
+        IcePolicy::RelayOnly => livekit::webrtc::peer_connection_factory::IceTransportsType::Relay,
+    };
     let (room, events) = timeout(deadline, Room::connect(endpoint.as_str(), token, options))
         .await
         .map_err(|_| ProbeError::Connect {
@@ -115,8 +129,9 @@ pub async fn connect_probe_with_timeout(
             elapsed_ms: millis(started.elapsed()),
             state: state_name(room.connection_state()),
         }],
-        ice_detail: "not exposed by room events; candidate-pair and UDP/TURN checks pending",
+        ice_detail: "room events are aggregate; selected candidate pairs are available in media-probe reports",
         media_verified: false,
+        ice_policy: policy,
     };
     Ok(ProbeRoom {
         room,
@@ -204,4 +219,11 @@ impl ProbeRoom {
     pub(crate) async fn next_event(&mut self) -> Option<RoomEvent> {
         self.events.recv().await
     }
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IcePolicy {
+    All,
+    RelayOnly,
 }

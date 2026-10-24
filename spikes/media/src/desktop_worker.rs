@@ -11,9 +11,11 @@ pub enum Command {
     Sources(u64),
     Start(u64, SourceId),
     Loopback(u64, Option<SourceId>),
+    SaveMetrics(std::path::PathBuf, media_spike::ui_metrics::UiFrameReport),
     Stop,
 }
 pub enum Event {
+    MetricsSaved(bool),
     Sources(u64, Result<Vec<CaptureSource>, String>),
     Started(u64, Result<watch::Receiver<FrameEvent>, String>),
     NetworkStarted(u64, watch::Receiver<FrameEvent>, bool),
@@ -133,6 +135,10 @@ impl Worker {
                                 let message = match result { Ok(message) | Err(message) => message };
                                 completion.send(FrameEvent::Finished(message));
                             })));
+                        }
+                        Command::SaveMetrics(path, report) => {
+                            let saved = serde_json::to_vec_pretty(&report).ok().is_some_and(|json| std::fs::write(path,json).is_ok());
+                            if output.send(Event::MetricsSaved(saved)).is_err() { break; }
                         }
                         Command::Stop => {
                             if let Some((_, old)) = stream.take() {

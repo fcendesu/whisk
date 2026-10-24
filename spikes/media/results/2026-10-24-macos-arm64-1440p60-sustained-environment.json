@@ -1,0 +1,32 @@
+{
+  "os": "Darwin",
+  "os_version": "27.0.1",
+  "architecture": "arm64",
+  "cpu": "Apple M4",
+  "build": "cargo dev unoptimized",
+  "gpu_inventory": [
+    {
+      "sppci_model": "Apple M4",
+      "sppci_cores": "8",
+      "spdisplays_mtlgpufamilysupport": "spdisplays_metal4"
+    }
+  ],
+  "workload": "two native color video publishers with an optical timestamp strip, one generated audio track, one native viewer; no GPUI or screen capture",
+  "resource_method": "/usr/bin/time -l for native three-participant client process; SFU/container resources excluded",
+  "focused_decode_fps": [
+    53.6629755801628,
+    48.65268463087159
+  ],
+  "gpu_utilization": null,
+  "gpu_presented_frames": null,
+  "display_end_to_end_latency_ms": null,
+  "frame_age_method": "same-process monotonic optical stamp before BGRA/I420 conversion to application decode; excludes GPU presentation",
+  "other_machine_load": "uncontrolled; other development apps and tests may be active",
+  "ten_minute_window": true,
+  "quality_certified": false,
+  "audio_pipeline": "dedicated worker with private Tokio runtime",
+  "gpu_capture_covers_full_trial": false,
+  "gpu_sampling_window_ms": 93933,
+  "gpu_snapshot_scope": "partial final window of whole-system AGX snapshots; not Whisk or VideoToolbox media-engine attribution",
+  "gpu_snapshot_samples": 92
+}

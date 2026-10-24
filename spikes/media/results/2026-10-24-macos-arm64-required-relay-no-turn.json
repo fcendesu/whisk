@@ -1,0 +1,10 @@
+{
+  "scenario": "relay_required_without_turn_in_loopback_fixture",
+  "expected_failure": true,
+  "exit_code": 1,
+  "elapsed_ms": 10836,
+  "diagnostic": {
+    "error": "connect",
+    "kind": "timeout"
+  }
+}

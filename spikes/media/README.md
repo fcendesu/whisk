@@ -195,7 +195,7 @@ room also does not prove working audio/video.
   travels through the frame channel and survives sender closure. Its regression
   test failed before the repair, then passed.
 
-Run all nine opt-in SFU tests with `./scripts/test-native-media.sh`. This operator
+Run all eleven opt-in SFU tests with `./scripts/test-native-media.sh`. This operator
 script issues fresh local fixture tokens without printing them; tests sharing
 identities serialize. Tests still require the explicitly started local Docker SFU
 and do not contact a cloud account. Stop the fixture when finished.
@@ -368,3 +368,81 @@ and nine explicit local-SFU tests pass. Formatting, clippy, shell syntax and dif
 checks pass; the previously documented upstream future-compatibility warnings
 remain. Corrected-worker sustained retests and the remaining M0 gates are still
 pending.
+
+## Current sustained profile matrix — 2026-10-24
+
+| Native profile trial | Focused decode FPS by phase | Frame-age p95 | Largest generated-audio gap | Audio continuity |
+|---|---:|---:|---:|---|
+| [720p30 baseline](results/2026-10-24-macos-arm64-720p30-sustained.json), shared loop | 29.98 / 29.97 | 29 ms | 92 ms | Pass |
+| [1080p60](results/2026-10-24-macos-arm64-1080p60-sustained.json), dedicated audio worker | 59.99 / 59.59 | 45 ms | 132 ms | Pass |
+| [1440p60](results/2026-10-24-macos-arm64-1440p60-sustained.json), dedicated audio worker | 53.66 / 48.65 | 78 ms | 61 ms | Pass |
+
+Each observation lasted ten minutes with two video publishers and a viewer
+switching focus at five minutes. All expected decoded sizes were retained, all
+optical samples were valid, and no wrong-source frames were observed. VideoToolbox
+was the reported encoder/decoder backend. The corrected 1440p60 run preserved
+audio but did not sustain the requested video rate. None of these headless trials
+certifies screen-capture throughput, GPUI presentation, hardware acceleration or
+release-quality tiers. High-profile product selections remain uncertified.
+
+Full [1080p60 conditions](results/2026-10-24-macos-arm64-1080p60-sustained-environment.json)
+and [resource use](results/2026-10-24-macos-arm64-1080p60-sustained-resources.txt), plus
+[1440p60 conditions](results/2026-10-24-macos-arm64-1440p60-sustained-environment.json)
+and [resource use](results/2026-10-24-macos-arm64-1440p60-sustained-resources.txt), accompany
+the raw records. `gpu-samples.jsonl` now records one-second whole-system AGX
+snapshots. This is not Whisk attribution and may not represent VideoToolbox
+media-engine activity. Only the final approximately 94 seconds of the corrected
+1440p60 trial were sampled; the 1080p60 trial was sampled throughout. Raw GPU
+records are retained beside their corresponding reports.
+
+## Bounded network failure fixtures
+
+`--relay-only` requires a relay in the native RTC configuration. Against the local
+fixture without TURN, it exits nonzero with a sanitized timeout rather than
+silently using direct UDP. The [CLI failure record](results/2026-10-24-macos-arm64-required-relay-no-turn.json)
+includes actual elapsed time and contains no credentials or endpoint address.
+A successful TURN deployment is not verified by this failure test.
+
+The full live-test script additionally creates a uniquely named signaling-only
+SFU, checks HTTP readiness, leaves UDP/TCP RTC ports unpublished, and advertises
+an unreachable loopback address. That negative fixture uses ICE Lite so the
+server cannot initiate a peer-reflexive route around the intentionally unavailable
+ports. Direct connection to it must fail within the probe deadline. Its container
+and network are removed on script exit; the ordinary loopback fixture remains
+running. No host firewall or global network settings are changed.
+
+Current fixtures explicitly use loopback ICE discovery settings, avoiding the
+upstream default public STUN configuration. These settings and the ICE Lite
+option follow the [pinned LiveKit configuration reference](https://raw.githubusercontent.com/livekit/livekit/v1.13.10/config-sample.yaml).
+Earlier sustained records predate this local-only discovery change; the complete
+live suite was rerun against the updated fixtures. Successful UDP tests, missing-
+relay failure, and reachable-signaling/unreachable-media failure now have separate
+controls.
+
+## GPUI preparation measurements
+
+Stop a preview, or let its bounded network test complete, then wait for
+**Last UI measurement saved beside the app** before closing it. The native worker
+writes `target/Whisk Media Lab-preview-metrics.json` (or the corresponding Network
+Lab filename). Source replacement also queues the previous measurement. Closing
+without that acknowledgement does not guarantee an export.
+
+Counters include CPU-prepared frames, the BGRA bytes copied by the UI bridge,
+maximum observed bridge queue depth, view-tree builds, and p95 image-preparation
+microseconds. The observation window includes setup after the UI session starts.
+These are CPU-side measurements: `gpu_presented_frames` remains unknown, and no
+capture/drop or display-presentation claim is derived from them. Samples are
+bounded to 100,000 and contain no frame pixels, window titles or room credentials.
+
+The [manual static-pattern record](results/2026-10-24-macos-arm64-ui-pattern-metrics.json)
+confirms one prepared 640×360 frame, 921,600 copied BGRA bytes, and a 174 µs
+preparation sample. It is a rendering/export check, not a sustained FPS result.
+A review caught a shutdown race in an initial automatic-on-quit export; that
+promise was removed in favor of the explicit save acknowledgement.
+
+Current verification: 33 deterministic Rust tests, two Python counter-filtering
+tests and eleven explicit local-SFU tests pass, plus formatting/clippy/shell checks.
+Remote CI has not been run. The current development app bundle is held unchanged
+while the user re-enables its screen access. Captured-window UI measurements,
+permission persistence/revocation, and physical microphone/speaker tests remain
+unverified; full M0 is not marked complete.
