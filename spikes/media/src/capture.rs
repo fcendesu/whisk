@@ -50,6 +50,7 @@ pub enum FrameEvent {
     Pending,
     Frame(Arc<VideoFrame>),
     Error(CaptureError),
+    Finished(String),
 }
 
 pub struct FrameStream {
@@ -173,11 +174,22 @@ pub fn frame_channel() -> (FrameSender, watch::Receiver<FrameEvent>) {
 impl FrameSender {
     pub fn send(&self, event: FrameEvent) {
         self.0.send_if_modified(|current| {
-            if matches!(current, FrameEvent::Error(_)) {
+            if matches!(current, FrameEvent::Error(_) | FrameEvent::Finished(_)) {
                 return false;
             }
             *current = event;
             true
         });
+    }
+}
+
+pub fn next_frame_event(receiver: &mut watch::Receiver<FrameEvent>) -> Option<FrameEvent> {
+    match receiver.has_changed() {
+        Ok(true) => Some(receiver.borrow_and_update().clone()),
+        Ok(false) => None,
+        Err(_) => match receiver.borrow_and_update().clone() {
+            terminal @ (FrameEvent::Finished(_) | FrameEvent::Error(_)) => Some(terminal),
+            _ => Some(FrameEvent::Error(CaptureError::Backend)),
+        },
     }
 }

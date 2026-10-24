@@ -82,6 +82,16 @@ impl MediaLab {
                         self.selected = None;
                     }
                 },
+                Event::NetworkStarted(id, frames) if id == generation => {
+                    self.frames = Some(frames);
+                    self.status = "Native H.264 → local SFU → native decode → GPUI. Sending a generated pattern only; this test lasts 30 seconds.".into();
+                }
+                Event::NetworkFinished(id, result) if id == generation => {
+                    self.frames = None;
+                    self.status = match result {
+                        Ok(message) | Err(message) => message,
+                    };
+                }
                 _ => {}
             }
             changed = true;
@@ -89,16 +99,15 @@ impl MediaLab {
         let event = self
             .frames
             .as_mut()
-            .and_then(|frames| match frames.has_changed() {
-                Ok(true) => Some(frames.borrow_and_update().clone()),
-                Err(_) => Some(FrameEvent::Error(
-                    media_spike::capture::CaptureError::Backend,
-                )),
-                _ => None,
-            });
+            .and_then(media_spike::capture::next_frame_event);
         match event {
             Some(FrameEvent::Frame(frame)) => {
                 self.set_frame(frame, cx);
+                changed = true;
+            }
+            Some(FrameEvent::Finished(message)) => {
+                self.frames = None;
+                self.status = message;
                 changed = true;
             }
             Some(FrameEvent::Error(error)) => {
@@ -125,7 +134,7 @@ impl MediaLab {
         let _ = self.worker.commands.try_send(Command::Stop);
         self.clear_preview(cx);
         self.selected = None;
-        self.status = "Preview stopped. Nothing is being broadcast.".into();
+        self.status = "Preview stopped.".into();
         cx.notify();
     }
     fn refresh(&mut self, cx: &mut Context<Self>) {
@@ -153,6 +162,18 @@ impl MediaLab {
             "Opening local preview…"
         } else {
             "Capture worker is busy. Retry shortly."
+        }
+        .into();
+        cx.notify();
+    }
+    fn network(&mut self, cx: &mut Context<Self>) {
+        self.clear_preview(cx);
+        self.selected = None;
+        let id = self.worker.next_generation();
+        self.status = if self.worker.commands.try_send(Command::Loopback(id)).is_ok() {
+            "Connecting two native participants to the configured SFU…"
+        } else {
+            "Media worker is busy. Retry shortly."
         }
         .into();
         cx.notify();
@@ -215,11 +236,11 @@ impl Render for MediaLab {
                             .bg(rgb(if self.selected == Some(id) { 0x48513e } else { 0x262d37 }))
                             .child(source.label.clone()).on_click(cx.listener(move |this, _, _, cx| this.start(id, cx)))
                     })))
-                .child(div().text_xs().text_color(rgb(0x8e98a7)).child("Local preview only. Select a source to capture it. Nothing is sent to a server.")))
+                .child(div().text_xs().text_color(rgb(0x8e98a7)).child("Screen previews stay local. The network test sends only a generated pattern to your configured SFU.")))
             .child(div().flex_1().min_w_0().h_full().flex().flex_col().p_6().gap_5()
                 .child(div().flex().items_center().justify_between()
                     .child(div().text_lg().font_weight(FontWeight::SEMIBOLD).child("Screen preview"))
-                    .child(div().rounded_md().px_3().py_1().bg(rgb(0x28372f)).text_sm().text_color(rgb(0xa4cfaa)).child("LOCAL ONLY")))
+                    .child(div().rounded_md().px_3().py_1().bg(rgb(0x28372f)).text_sm().text_color(rgb(0xa4cfaa)).child("MEDIA LAB")))
                 .child(div().relative().w_full().min_w_0().flex_1().min_h_0().rounded_xl().bg(rgb(0x0e1116)).overflow_hidden().flex().items_center().justify_center()
                     .when_some(self.preview.clone(), |view, image| view.child(img(image).absolute().size_full().object_fit(ObjectFit::Contain)))
                     .when(self.preview.is_none(), |view| view.child(div().flex().flex_col().gap_3().items_center()
@@ -228,6 +249,7 @@ impl Render for MediaLab {
                 .child(div().w_full().min_w_0().text_sm().text_color(rgb(0xb1bac7)).child(self.status.clone()))
                 .child(div().flex().gap_3()
                     .child(div().id("test-pattern").rounded_md().px_4().py_3().bg(rgb(0xf8b869)).text_color(rgb(0x25201a)).cursor_pointer().child("Test video surface").on_click(cx.listener(|this, _, _, cx| this.pattern(cx))))
+                    .child(div().id("network").rounded_md().px_4().py_3().bg(rgb(0x303945)).cursor_pointer().child("Test network video").on_click(cx.listener(|this, _, _, cx| this.network(cx))))
                     .child(div().id("stop").rounded_md().px_4().py_3().bg(rgb(0x303945)).cursor_pointer().child("Stop preview").on_click(cx.listener(|this, _, _, cx| this.stop(cx)))))
                 .child(div().text_xs().text_color(rgb(0x727e90)).child("M0 feasibility build · ScreenCaptureKit → bounded frame handoff → GPUI · Voice and messaging are not connected yet.")))
     }
@@ -239,7 +261,14 @@ fn main() {
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 titlebar: Some(TitlebarOptions {
-                    title: Some("Whisk — Media Lab".into()),
+                    title: Some(
+                        if std::env::var_os("WHISK_MEDIA_NETWORK_MODE").is_some() {
+                            "Whisk — Network Lab"
+                        } else {
+                            "Whisk — Media Lab"
+                        }
+                        .into(),
+                    ),
                     ..Default::default()
                 }),
                 ..Default::default()

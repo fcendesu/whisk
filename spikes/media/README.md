@@ -33,6 +33,46 @@ signed/notarized for distribution and remains dependent on the build toolchain;
 release packaging is still M7 work. Native API waits run on a worker and may take
 up to the bindings' default 30-second completion deadline.
 
+## Native network-video test
+
+```sh
+# Open a separate network test app without changing the screen-capture app bundle
+./scripts/run-media-lab.sh --network
+```
+
+This starts the pinned loopback SFU, generates separate two-minute publish/view
+room tokens, and launches `target/Whisk Network Lab.app` with those credentials
+in its environment. Click **Test network video**. For 30 seconds, one native
+participant publishes a generated 1280×720 BGRA pattern as H.264 and a second
+participant decodes it into the bounded GPUI frame surface. No captured screen
+is published. Stop invalidates the session and closes its media connections.
+If the fixture tokens expire before another test, close and relaunch with the
+script to issue fresh tokens. The fixture is left running; teardown is explicit
+with the Compose command below.
+
+A shorter CLI run produces a JSON measurement record:
+
+```sh
+export LIVEKIT_URL=ws://127.0.0.1:7880
+export LIVEKIT_PUBLISH_TOKEN="$(python3 spikes/media/fixture/token.py --publisher)"
+export LIVEKIT_TOKEN="$(python3 spikes/media/fixture/token.py)"
+cargo run --locked -p media-spike -- --loopback
+unset LIVEKIT_PUBLISH_TOKEN LIVEKIT_TOKEN
+```
+
+The decoder matches this run's publication SID, so unrelated room publishers
+cannot supply the test's frames. Reports count application-submitted and decoded
+frames separately, exclude the SDK's black keepalive from decoded proof, and read
+codec/encoder/decoder implementation from actual WebRTC stats. Implementation
+strings such as VideoToolbox identify the reported backend; they are not a
+certification of hardware acceleration or a high-quality profile. Empty stats
+remain unknown. CPU copies convert BGRA → I420 → encoded video → decoded BGRA.
+
+The codec-policy tests require exact profile certification for high-quality
+selections and otherwise choose 720p30; the current network probe itself only
+attempts 720p30. Policy tests alone do not prove encoder availability or certify
+1080p60/1440p60.
+
 ## Connection probe
 
 Requirements: Rust 1.99.0, Apple Command Line Tools on macOS, Python 3, and
@@ -114,13 +154,41 @@ room also does not prove working audio/video.
 - Current upstream `block` and `proc-macro-error2` versions emit Rust future-
   compatibility warnings. They do not fail current checks; resolve before release.
 
+## Network-video evidence — 2026-10-24
+
+- Twenty deterministic tests pass; six explicitly invoked live tests pass.
+- [Three-second native loopback report](results/2026-10-24-macos-arm64-h264-loopback.json):
+  88 submitted / 88 decoded frames, 1280×720, H.264, VideoToolbox encoder/decoder.
+- The actual network test window rendered the decoded warm-orange pattern and
+  completed its 30-second run with 898 decoded frames. This is a decode counter,
+  not a measured count of GPU-presented frames. No camera, microphone or captured
+  screen was transmitted.
+- Live regressions cover publication isolation with another publisher present,
+  delivery to the preview handoff, and cancellation during an active session.
+- Review also found an asynchronous completion race; the terminal result now
+  travels through the frame channel and survives sender closure. Its regression
+  test failed before the repair, then passed.
+
+Run all six opt-in SFU tests with `./scripts/test-native-media.sh`. This operator
+script issues fresh local fixture tokens without printing them; tests sharing
+identities serialize. Tests still require the explicitly started local Docker SFU
+and do not contact a cloud account. Stop the fixture when finished.
+
+The benchmark-counter validator additionally rejects absent timestamps/counts,
+reset or inconsistent counters, zero-duration windows, and empty capture runs.
+It calculates rates/drops from the measured window and marks durations shorter
+than ten minutes as insufficient. This helper is not connected to hardware
+CPU/GPU/latency measurements or GPUI presentation counters yet; its duration flag
+alone is not a capability certification.
+
 ## Remaining M0 gates
 
 - Task 2: exercise display/window capture and revocation with actual granted OS
   permission; the native adapter, permission-denial path and frame handoff exist.
-- Task 3: captured/generated video publishing, measured codec selection/fallback.
-- Task 4: connect the pinned, bounded GPUI preview to decoded remote frames.
-  The local renderer and GPU pattern have been exercised; remote decode has not.
+- Task 3: connect actual captured frames after permission verification; generated
+  H.264 publish/decode and conservative profile-policy tests exist.
+- Task 4: instrument frame timing and GPU presentation/copy metrics. The remote
+  decoded frame → GPUI bridge has now been exercised in the network window.
 - Task 5: two concurrent publishers, selectable viewer, ten-minute measurements.
 - Verify actual microphone publish/playback and audio continuity while switching
   streams before declaring the milestone complete.

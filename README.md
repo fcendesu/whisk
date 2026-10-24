@@ -11,7 +11,8 @@ instances; each instance hosts one community in v1.
 Implementation is in **M0: native media feasibility**. The workspace now has a
 real LiveKit connection probe and a runnable **Whisk Media Lab** GPUI window with
 the provided icon, source discovery, local screen/window preview, and a GPU test
-pattern. The production messaging desktop and backend are pending.
+pattern. Native H.264 publishing, SFU forwarding, and remote-frame decode into
+GPUI are also exercised by a synthetic network test. The production messaging desktop and backend are pending.
 
 On macOS, build and open the preview from this checkout:
 
@@ -49,4 +50,6 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 ```
 
-Live SFU tests are explicit opt-in tests; follow the probe README to run them.
+Live SFU tests are explicit opt-in tests (`./scripts/test-native-media.sh`).
+`./scripts/run-media-lab.sh --network` opens the separate network-video test app.
+Follow the probe README for setup, measured evidence, and remaining M0 gates.

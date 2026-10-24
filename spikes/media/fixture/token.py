@@ -6,20 +6,21 @@ import hmac
 import json
 import time
 import uuid
+import argparse
 
 
 def encode(value):
     return base64.urlsafe_b64encode(value).rstrip(b"=")
 
 
-def token():
+def token(publish=False):
     now = int(time.time())
     header = encode(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
     claims = encode(json.dumps({
         "iss": "devkey", "sub": f"whisk-probe-{uuid.uuid4()}",
         "nbf": now - 5, "exp": now + 120,
         "video": {"roomJoin": True, "room": "whisk-m0-smoke",
-                  "canPublish": False, "canSubscribe": True,
+                  "canPublish": publish, "canSubscribe": True,
                   "canPublishData": False},
     }).encode())
     signed = header + b"." + claims
@@ -27,4 +28,7 @@ def token():
 
 
 if __name__ == "__main__":
-    print(token())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--publisher", action="store_true", help="allow screen-video publish in the local smoke room")
+    args = parser.parse_args()
+    print(token(publish=args.publisher))

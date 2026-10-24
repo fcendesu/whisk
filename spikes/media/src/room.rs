@@ -196,3 +196,12 @@ fn classify(error: RoomError) -> FailureKind {
         _ => FailureKind::Transport,
     }
 }
+
+impl ProbeRoom {
+    pub(crate) fn sdk_room(&self) -> &Room {
+        &self.room
+    }
+    pub(crate) async fn next_event(&mut self) -> Option<RoomEvent> {
+        self.events.recv().await
+    }
+}

@@ -74,3 +74,15 @@ fn native_stop_error_cannot_be_hidden_by_a_late_frame() {
         FrameEvent::Error(CaptureError::PermissionDenied)
     ));
 }
+
+#[test]
+fn closed_frame_channel_preserves_the_final_network_result() {
+    use media_spike::capture::{FrameEvent, frame_channel, next_frame_event};
+    let (sender, mut receiver) = frame_channel();
+    sender.send(FrameEvent::Finished("87 decoded frames".into()));
+    drop(sender);
+    match next_frame_event(&mut receiver) {
+        Some(FrameEvent::Finished(message)) => assert_eq!(message, "87 decoded frames"),
+        other => panic!("completion was replaced by a capture failure: {other:?}"),
+    }
+}
