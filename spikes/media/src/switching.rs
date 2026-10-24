@@ -1,6 +1,7 @@
-//! Two synthetic publishers and one viewer; hardware/audio certification is separate.
+//! Two synthetic video publishers with generated audio continuity across viewer focus changes.
 use crate::{
     capture::VideoFrame,
+    codec::VideoProfile,
     loopback::{MediaError, bgra_to_i420, decoded_bgra},
     room::{ProbeRoom, connect_probe},
 };
@@ -9,6 +10,8 @@ use livekit::{
     options::{TrackPublishOptions, VideoCodec, VideoEncoding},
     prelude::*,
     webrtc::{
+        audio_source::{AudioSourceOptions, RtcAudioSource, native::NativeAudioSource},
+        stats::RtcStats,
         video_frame::{VideoFrame as RtcFrame, VideoRotation},
         video_source::{RtcVideoSource, VideoResolution, native::NativeVideoSource},
         video_stream::native::NativeVideoStream,
@@ -21,11 +24,29 @@ use tokio::time::{Instant, MissedTickBehavior, interval, sleep_until, timeout};
 #[derive(Debug, Serialize)]
 pub struct SwitchingReport {
     pub submitted_frames: [u64; 2],
+    pub received_size: [[u32; 2]; 2],
+    pub requested_profile: VideoProfile,
+    pub requested_fps: u32,
+    pub frame_age_samples: u64,
+    pub invalid_timestamps: u64,
+    pub frame_age_p50_ms: Option<u32>,
+    pub frame_age_p95_ms: Option<u32>,
+    pub frame_age_max_ms: Option<u32>,
+    pub encoder: [Option<String>; 2],
+    pub decoder: [Option<String>; 2],
+    pub phase_duration_ms: [u64; 2],
     pub received_frames: [u64; 2],
     pub wrong_source_frames: u64,
     pub duration_ms: u64,
     pub audio_verified: bool,
+    pub audible_audio_frames: [u64; 2],
+    pub max_audio_gap_ms: u64,
+    pub tone_frequency_hz: f64,
+    pub microphone_verified: bool,
+    pub audio_source: &'static str,
     pub quality_certified: bool,
+    pub publisher_transports: [Vec<crate::transport::TransportReport>; 2],
+    pub viewer_transports: [Vec<crate::transport::TransportReport>; 2],
 }
 
 pub async fn run_switch_probe(
@@ -34,6 +55,27 @@ pub async fn run_switch_probe(
     second_token: &str,
     viewer_token: &str,
     phase: Duration,
+) -> Result<SwitchingReport, MediaError> {
+    run_profile_probe(
+        url,
+        first_token,
+        second_token,
+        viewer_token,
+        phase,
+        VideoProfile::P720F30,
+    )
+    .await
+}
+
+/// Experimental profile attempts bypass release policy only to collect evidence.
+/// Success does not certify capability; product profile selection still uses select_codec.
+pub async fn run_profile_probe(
+    url: &str,
+    first_token: &str,
+    second_token: &str,
+    viewer_token: &str,
+    phase: Duration,
+    profile: VideoProfile,
 ) -> Result<SwitchingReport, MediaError> {
     if phase.is_zero()
         || phase > Duration::from_secs(300)
@@ -61,7 +103,7 @@ pub async fn run_switch_probe(
             return Err(MediaError::Connect);
         }
     };
-    let result = probe([&first, &second], &mut viewer, phase).await;
+    let result = probe([&first, &second], &mut viewer, phase, profile).await;
     let first_closed = first.close().await;
     let second_closed = second.close().await;
     let viewer_closed = viewer.close().await;
@@ -76,16 +118,15 @@ async fn probe(
     publishers: [&ProbeRoom; 2],
     viewer: &mut ProbeRoom,
     phase: Duration,
+    profile: VideoProfile,
 ) -> Result<SwitchingReport, MediaError> {
-    let sources: [NativeVideoSource; 2] = std::array::from_fn(|_| {
-        NativeVideoSource::new(
-            VideoResolution {
-                width: 1280,
-                height: 720,
-            },
-            true,
-        )
-    });
+    let (width, height, fps, bitrate) = match profile {
+        VideoProfile::P720F30 => (1280, 720, 30, 2_000_000),
+        VideoProfile::P1080F60 => (1920, 1080, 60, 6_000_000),
+        VideoProfile::P1440F60 => (2560, 1440, 60, 10_000_000),
+    };
+    let sources: [NativeVideoSource; 2] =
+        std::array::from_fn(|_| NativeVideoSource::new(VideoResolution { width, height }, true));
     let tracks: [LocalVideoTrack; 2] = std::array::from_fn(|index| {
         LocalVideoTrack::create_video_track(
             &format!("whisk-synthetic-{index}"),
@@ -103,8 +144,8 @@ async fn probe(
                     video_codec: VideoCodec::H264,
                     simulcast: false,
                     video_encoding: Some(VideoEncoding {
-                        max_bitrate: 2_000_000,
-                        max_framerate: 30.,
+                        max_bitrate: bitrate,
+                        max_framerate: fps as f64,
                     }),
                     ..Default::default()
                 },
@@ -115,14 +156,35 @@ async fn probe(
         .map_err(|_| MediaError::Publish)?;
         publications.push(publication);
     }
+    let audio_source = NativeAudioSource::new(AudioSourceOptions::default(), 48_000, 1, 100);
+    let audio_track = LocalAudioTrack::create_audio_track(
+        "whisk-generated-440hz-tone",
+        RtcAudioSource::Native(audio_source.clone()),
+    );
+    let audio_publication = timeout(
+        Duration::from_secs(10),
+        publishers[0].sdk_room().local_participant().publish_track(
+            LocalTrack::Audio(audio_track),
+            TrackPublishOptions {
+                source: TrackSource::Microphone,
+                dtx: false,
+                ..Default::default()
+            },
+        ),
+    )
+    .await
+    .map_err(|_| MediaError::Publish)?
+    .map_err(|_| MediaError::Publish)?;
     let result=async {
         let mut remote:[Option<RemoteVideoTrack>;2]=[None,None];
+        let mut remote_audio = None;
         timeout(Duration::from_secs(10),async {
-            while remote.iter().any(Option::is_none) {
+            while remote.iter().any(Option::is_none) || remote_audio.is_none() {
                 match viewer.next_event().await {
                     Some(RoomEvent::TrackSubscribed {track:RemoteTrack::Video(track),publication,..})=>{
                         if let Some(index)=publications.iter().position(|expected|expected.sid()==publication.sid()) { remote[index]=Some(track); }
                     }
+                    Some(RoomEvent::TrackSubscribed {track:RemoteTrack::Audio(track),publication,..}) if publication.sid() == audio_publication.sid() => { remote_audio = Some(track); }
                     Some(_)=>{},
                     None=>return Err(MediaError::Subscribe),
                 }
@@ -130,19 +192,25 @@ async fn probe(
             Ok(())
         }).await.map_err(|_|MediaError::Subscribe)??;
         let selected=[remote[0].take().ok_or(MediaError::Subscribe)?,remote[1].take().ok_or(MediaError::Subscribe)?];
-        let patterns=[[40,140,230,255],[230,120,40,255]].map(|color|VideoFrame {width:1280,height:720,bgra:color.into_iter().cycle().take(1280*720*4).collect::<Vec<_>>().into()});
-        let mut report=SwitchingReport{submitted_frames:[0;2],received_frames:[0;2],wrong_source_frames:0,duration_ms:0,audio_verified:false,quality_certified:false};
+        let mut patterns=[[40,140,230,255],[230,120,40,255]].map(|color|VideoFrame {width,height,bgra:color.into_iter().cycle().take(width as usize * height as usize * 4).collect::<Vec<_>>().into()});
+        let mut report=SwitchingReport{submitted_frames:[0;2],received_size:[[0;2];2],requested_profile:profile,requested_fps:fps,frame_age_samples:0,invalid_timestamps:0,frame_age_p50_ms:None,frame_age_p95_ms:None,frame_age_max_ms:None,encoder:[None,None],decoder:[None,None],phase_duration_ms:[0;2],received_frames:[0;2],wrong_source_frames:0,duration_ms:0,audio_verified:false,audible_audio_frames:[0;2],max_audio_gap_ms:0,tone_frequency_hz:0.0,microphone_verified:false,audio_source:"generated_440hz_pcm",quality_certified:false,publisher_transports:[Vec::new(),Vec::new()],viewer_transports:[Vec::new(),Vec::new()]};
+        let mut ages = Vec::new();
         let started=Instant::now();
+        let mut audio = crate::audio_probe::AudioTask::start(audio_source, remote_audio.ok_or(MediaError::Subscribe)?, started);
         for (focus,track) in selected.iter().enumerate() {
+            audio.focus(focus == 1);
             let mut stream=NativeVideoStream::new(track.rtc_track());
-            let end=Instant::now()+phase;
-            let mut ticks=interval(Duration::from_secs_f64(1./30.));
+            let phase_start=Instant::now();
+            let end=phase_start+phase;
+            let mut ticks=interval(Duration::from_secs_f64(1./fps as f64));
             ticks.set_missed_tick_behavior(MissedTickBehavior::Skip);
             loop {
                 tokio::select! {
                     _=sleep_until(end)=>break,
+                    error=audio.stopped_unexpectedly()=>return Err(error),
                     _=ticks.tick()=>{
                         for index in 0..2 {
+                            crate::frame_clock::stamp(&mut patterns[index], started.elapsed().as_millis() as u32)?;
                             let frame=RtcFrame{rotation:VideoRotation::VideoRotation0,timestamp_us:started.elapsed().as_micros().min(i64::MAX as u128) as i64,frame_metadata:None,buffer:bgra_to_i420(&patterns[index])?};
                             if sources[index].capture_frame(&frame) { report.submitted_frames[index]+=1; }
                         }
@@ -150,23 +218,49 @@ async fn probe(
                     event=viewer.next_event()=>{
                         match event {
                             Some(RoomEvent::ConnectionStateChanged(ConnectionState::Disconnected | ConnectionState::Reconnecting)) | None=>return Err(MediaError::Connect),
-                            Some(RoomEvent::TrackUnsubscribed{publication,..}) if publication.sid()==publications[focus].sid()=>return Err(MediaError::Decode),
+                            Some(RoomEvent::TrackUnsubscribed{publication,..}) if (publication.sid()==publications[focus].sid() || publication.sid()==audio_publication.sid())=>return Err(MediaError::Decode),
                             _=>{},
                         }
                     }
                     frame=stream.next()=>{
                         let frame=decoded_bgra(&frame.ok_or(MediaError::Decode)?)?;
+                        report.received_size[focus] = [frame.width, frame.height];
                         let [b,g,r,_]:[u8;4]=frame.bgra[..4].try_into().map_err(|_|MediaError::Decode)?;
                         if b<15 && g<15 && r<15 { continue; }
                         let correct=if focus==0 {r>180 && b<80 && g>80} else {b>180 && r<80 && g>80};
                         if !correct { report.wrong_source_frames+=1; }
+                        let now = started.elapsed().as_millis() as u32;
+                        match crate::frame_clock::frame_age_ms(&frame, now) {
+                            Some(age) => { if ages.len() < 100_000 { ages.push(age); } }
+                            None => { report.invalid_timestamps += 1; }
+                        }
                         report.received_frames[focus]+=1;
                     }
                 }
             }
             stream.close();
+            report.phase_duration_ms[focus] = phase_start.elapsed().as_millis() as u64;
         }
+        let audio = audio.finish().await?;
+        report.frame_age_samples = ages.len() as u64;
+        if let Some([p50,p95,max]) = crate::benchmark::latency_percentiles(&mut ages) {
+            report.frame_age_p50_ms = Some(p50);
+            report.frame_age_p95_ms = Some(p95);
+            report.frame_age_max_ms = Some(max);
+        }
+        report.tone_frequency_hz = audio.frequency_hz;
         report.duration_ms=started.elapsed().as_millis() as u64;
+        report.audible_audio_frames = audio.frames;
+        report.max_audio_gap_ms = audio.max_gap_ms;
+        report.audio_verified = audio.verified;
+        for index in 0..2 {
+            let stats = timeout(Duration::from_secs(3), tracks[index].get_stats()).await.map_err(|_|MediaError::Stats)?.map_err(|_|MediaError::Stats)?;
+            report.publisher_transports[index] = crate::transport::selected_transports(&stats);
+            for stat in stats { if let RtcStats::OutboundRtp(out) = stat && !out.outbound.encoder_implementation.is_empty() { report.encoder[index] = Some(out.outbound.encoder_implementation); } }
+            let stats = timeout(Duration::from_secs(3), selected[index].get_stats()).await.map_err(|_|MediaError::Stats)?.map_err(|_|MediaError::Stats)?;
+            report.viewer_transports[index] = crate::transport::selected_transports(&stats);
+            for stat in stats { if let RtcStats::InboundRtp(input) = stat && !input.inbound.decoder_implementation.is_empty() { report.decoder[index] = Some(input.inbound.decoder_implementation); } }
+        }
         if report.received_frames.contains(&0) { return Err(MediaError::NoFrames); }
         Ok(report)
     }.await;
@@ -185,6 +279,19 @@ async fn probe(
         ) {
             clean = false;
         }
+    }
+    if !matches!(
+        timeout(
+            Duration::from_secs(5),
+            publishers[0]
+                .sdk_room()
+                .local_participant()
+                .unpublish_track(&audio_publication.sid())
+        )
+        .await,
+        Ok(Ok(_))
+    ) {
+        clean = false;
     }
     let report = result?;
     if !clean {

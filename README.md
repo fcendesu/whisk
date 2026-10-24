@@ -13,6 +13,8 @@ real LiveKit connection probe and a runnable **Whisk Media Lab** GPUI window wit
 the provided icon, source discovery, local screen/window preview, and a GPU test
 pattern. Native H.264 publishing, SFU forwarding, and remote-frame decode into
 GPUI work with generated frames and explicitly selected captured windows.
+Generated-audio continuity, experimental profile attempts, optical frame-age
+measurements and selected ICE-path diagnostics are also implemented.
 The production messaging desktop and backend are pending.
 
 On macOS, build and open the preview from this checkout:

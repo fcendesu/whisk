@@ -1,0 +1,46 @@
+{
+  "submitted_frames": [
+    32755,
+    27459
+  ],
+  "received_size": [
+    [
+      2560,
+      1440
+    ],
+    [
+      2560,
+      1440
+    ]
+  ],
+  "requested_profile": "p1440_f60",
+  "requested_fps": 60,
+  "encoder": [
+    "VideoToolbox",
+    "VideoToolbox"
+  ],
+  "decoder": [
+    "VideoToolbox",
+    "VideoToolbox"
+  ],
+  "phase_duration_ms": [
+    300002,
+    300005
+  ],
+  "received_frames": [
+    17906,
+    11497
+  ],
+  "wrong_source_frames": 0,
+  "duration_ms": 600009,
+  "audio_verified": false,
+  "audible_audio_frames": [
+    29904,
+    29732
+  ],
+  "max_audio_gap_ms": 304,
+  "tone_frequency_hz": 441.56298209135423,
+  "microphone_verified": false,
+  "audio_source": "generated_440hz_pcm",
+  "quality_certified": false
+}

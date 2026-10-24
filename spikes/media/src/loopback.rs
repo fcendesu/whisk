@@ -30,6 +30,8 @@ pub struct LoopbackReport {
     pub decoder: Option<String>,
     pub duration_ms: u64,
     pub high_quality_certified: bool,
+    pub publisher_transports: Vec<crate::transport::TransportReport>,
+    pub viewer_transports: Vec<crate::transport::TransportReport>,
 }
 #[derive(Debug, Serialize)]
 #[serde(tag = "error", rename_all = "snake_case")]
@@ -175,7 +177,7 @@ async fn pipeline(
         // Warm orange with deliberately distinct B/G/R values: catches channel-order bugs.
         let bgra: Vec<u8> = [40, 140, 230, 255].into_iter().cycle().take(1280 * 720 * 4).collect();
         let pattern = BgraFrame { width: 1280, height: 720, bgra: bgra.into() };
-        let mut report = LoopbackReport { submitted_frames:0, decoded_frames:0, received_width:0, received_height:0, last_pixel_bgra:[0;4], codec:None, encoder:None, decoder:None, duration_ms:0, high_quality_certified:false };
+        let mut report = LoopbackReport { submitted_frames:0, decoded_frames:0, received_width:0, received_height:0, last_pixel_bgra:[0;4], codec:None, encoder:None, decoder:None, duration_ms:0, high_quality_certified:false, publisher_transports:Vec::new(),viewer_transports:Vec::new() };
         let captured = input.is_some();
         loop {
             tokio::select! {
@@ -218,6 +220,8 @@ async fn pipeline(
         if report.submitted_frames == 0 || report.decoded_frames == 0 { return Err(MediaError::NoFrames); }
         let local_stats = timeout(Duration::from_secs(3), track.get_stats()).await.map_err(|_| MediaError::Stats)?.map_err(|_| MediaError::Stats)?;
         let remote_stats = timeout(Duration::from_secs(3), remote.get_stats()).await.map_err(|_| MediaError::Stats)?.map_err(|_| MediaError::Stats)?;
+        report.publisher_transports = crate::transport::selected_transports(&local_stats);
+        report.viewer_transports = crate::transport::selected_transports(&remote_stats);
         let mut codec_id = None;
         for stat in &local_stats {
             if let RtcStats::OutboundRtp(out) = stat {

@@ -1,0 +1,19 @@
+{
+  "os": "macOS",
+  "architecture": "aarch64",
+  "gpu": "Apple M4, 8 GPU cores, Metal 4",
+  "workload": "two constant-color synthetic video publishers, generated440Hz audio, native viewer; no capture or GPUI",
+  "build": "Cargo dev unoptimized; audio and video in one async loop; before optical timestamp instrumentation and dedicated audio worker",
+  "focused_decode_fps": [
+    59.68626875820828,
+    38.322694621756305
+  ],
+  "resource_scope": "/usr/bin/time -l for native three-participant client; SFU/container excluded",
+  "machine_load": "uncontrolled development load including concurrent builds/tests; preliminary throughput result",
+  "audio_continuity_budget_ms": 250,
+  "audio_continuity_passed": false,
+  "quality_certified": false,
+  "gpu_utilization": null,
+  "gpu_presented_frames": null,
+  "application_frame_age_ms": null
+}

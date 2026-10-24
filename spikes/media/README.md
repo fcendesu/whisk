@@ -24,7 +24,15 @@ asset. This is a media feasibility shell, not the messaging application.
 
 Permission checks never request access automatically. If access is not granted,
 the window shows System Settings instructions. Granting it is a manual operator
-step; restart the app if macOS requires it. Capture callbacks keep only the latest
+step; restart the app if macOS requires it. Ad hoc development rebuilds can change
+the code identity and require manually enabling capture again. In a later
+relaunch here, preflight returned denied and the UI safely showed instructions;
+permission persistence is not verified. `codesign -dr -` confirms this bundle's
+implicit requirement is a code hash, and no valid development signing identity
+is currently configured. Stable certificate-based signing remains packaging work;
+no keychain credentials or privacy settings were changed. See Apple's
+[code identity explanation](https://developer.apple.com/library/archive/technotes/tn2206/).
+Capture callbacks keep only the latest
 frame; the native queue and renderer queue are each bounded to two. BGRA row
 padding is removed before CPU upload; retired GPU images are released after the
 current window update. There is no zero-copy claim.
@@ -187,7 +195,7 @@ room also does not prove working audio/video.
   travels through the frame channel and survives sender closure. Its regression
   test failed before the repair, then passed.
 
-Run all eight opt-in SFU tests with `./scripts/test-native-media.sh`. This operator
+Run all nine opt-in SFU tests with `./scripts/test-native-media.sh`. This operator
 script issues fresh local fixture tokens without printing them; tests sharing
 identities serialize. Tests still require the explicitly started local Docker SFU
 and do not contact a cloud account. Stop the fixture when finished.
@@ -267,3 +275,96 @@ Upstream references: [pinned SDK source](https://docs.rs/crate/livekit/0.9.7/sou
   and terminal frame-channel handling are shared with the network preview.
 - Permission revocation, microphone/audio continuity, raw ICE/UDP/TURN diagnostics,
   sustained CPU/GPU/latency measurements and high-profile certification remain open.
+
+## Generated audio, profile attempts and timing diagnostics
+
+The `--switch` probe now publishes a generated 440 Hz mono PCM tone from publisher
+one and keeps its native audio decoder across both viewer focus phases. Audio
+feeding and observation run on a separate worker from CPU video conversion. The
+report counts non-silent decoded frames in each phase, checks tone frequency,
+and includes startup, inter-frame and trailing silence in a 250 ms continuity
+budget. `audio_verified` refers only to this generated PCM receive test;
+`microphone_verified` remains false. It does not test device capture or speaker
+playback and does not request microphone access.
+
+Experimental profile measurements explicitly bypass release profile selection
+only to collect evidence. They never add certified profiles to `MediaCapabilities`:
+
+```sh
+# Two five-minute phases: ten minutes of native video observation plus setup.
+./scripts/benchmark-media.sh 720p30 300 target/media-benchmark/720p30
+./scripts/benchmark-media.sh 1080p60 300 target/media-benchmark/1080p60
+./scripts/benchmark-media.sh 1440p60 300 target/media-benchmark/1440p60
+```
+
+The macOS operator script starts the local fixture and writes `measurement.json`,
+`resources.txt` and `environment.json`. `/usr/bin/time -l` measures the native
+three-participant client process, including setup; Docker/SFU resources are
+excluded. This is a dev build under uncontrolled machine load. It is not a release
+performance certification. Existing output directories containing measurements
+are rejected rather than overwritten; the dedicated SFU remains running until
+explicit teardown.
+
+Each generated video frame carries a small 512×8 pixel optical timestamp strip.
+A decoded frame's monotonic age includes CPU conversion, encode, SFU transport,
+decode and application observation, with millisecond precision. Magic/checksum
+validation rejects damaged marks and future timestamps. Valid old samples remain
+in the distribution. Nearest-rank p50/p95/max summarize up to 100,000 samples;
+no samples produces unknown values. This excludes GPUI rendering, GPU completion,
+monitor presentation and separate-machine clock synchronization.
+
+Publisher and viewer ICE transports are labeled separately. Diagnostics follow
+`selectedCandidatePairId` and retain only allowlisted protocol, candidate types,
+state, nomination, RTT and aggregate byte counters. Candidate addresses, ports,
+URLs and username fragments are not retained. Missing stats stay unknown. Local
+UDP success is not a TURN or blocked-network test; controlled UDP/TURN failure
+fixtures remain pending.
+
+### Preliminary sustained 1440p60 result
+
+The [initial ten-minute measurement](results/2026-10-24-macos-arm64-1440p60-initial.json)
+used the earlier shared audio/video loop, constant-color frames, and no optical
+clock. Actual decoded size was 2560×1440, with VideoToolbox reported for both
+encoders and decoders. Viewer phases averaged 59.7 and 38.3 FPS; the largest
+observed audio gap was 304 ms, failing the continuity budget. The native process
+peaked at approximately 232 MiB resident memory. See the
+[resource record](results/2026-10-24-macos-arm64-1440p60-initial-resources.txt) and
+[measurement conditions](results/2026-10-24-macos-arm64-1440p60-initial-environment.json).
+
+This does not establish sustained 1440p60 support. It motivated separating the
+audio worker from video conversion. High-quality release profiles remain
+uncertified, and product selection continues to fall back to 720p30. Full M0
+still needs sustained corrected-worker/profile results, actual capture-plus-GPUI
+performance counters, GPU/presentation timings, permission revocation and
+controlled network failure evidence. Physical microphone/speaker testing is also
+unverified.
+
+### Sustained 720p30 baseline and short corrected-worker probes
+
+The [ten-minute 720p30 record](results/2026-10-24-macos-arm64-720p30-sustained.json)
+shows 29.98/29.97 focused decode FPS, 17,984 valid optical samples with no damaged
+stamps, application frame-age p50/p95/max of 25/29/145 ms, and a 92 ms maximum
+generated-audio receive gap. Both publisher and viewer selected UDP. This baseline
+used the shared loop with corrected silence accounting, before audio was moved
+to its own worker. See its
+[conditions](results/2026-10-24-macos-arm64-720p30-sustained-environment.json) and
+[process resources](results/2026-10-24-macos-arm64-720p30-sustained-resources.txt).
+It is a headless native receive measurement, not a GPU presentation or capture
+performance certification.
+
+Short ten-second corrected-worker probes, collected while the baseline trial
+was also active:
+
+| Requested | Focused decode FPS by phase | Application frame-age p95 | Largest audio gap |
+|---|---:|---:|---:|
+| [720p30](results/2026-10-24-macos-arm64-720p30-timing.json) | 28.39 / 29.98 | 29 ms | 52 ms |
+| [1080p60](results/2026-10-24-macos-arm64-1080p60-timing.json) | 59.75 / 59.96 | 36 ms | 58 ms |
+| [1440p60](results/2026-10-24-macos-arm64-1440p60-timing.json) | 56.75 / 57.38 | 185 ms | 61 ms |
+
+All three retained the expected dimensions, identified VideoToolbox encoders and
+decoders, delivered valid optical stamps, and passed generated-audio continuity.
+These short runs do not certify either 60 FPS profile. Thirty deterministic tests
+and nine explicit local-SFU tests pass. Formatting, clippy, shell syntax and diff
+checks pass; the previously documented upstream future-compatibility warnings
+remain. Corrected-worker sustained retests and the remaining M0 gates are still
+pending.

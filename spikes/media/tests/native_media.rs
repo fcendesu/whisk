@@ -27,6 +27,20 @@ async fn native_h264_frames_cross_the_sfu_and_decode_with_correct_colors() {
     assert!(report.decoded_frames >= 10, "{report:?}");
     assert_eq!((report.received_width, report.received_height), (1280, 720));
     assert_eq!(report.codec.as_deref(), Some("video/H264"));
+    assert!(
+        report
+            .publisher_transports
+            .iter()
+            .any(|path| path.protocol == Some("udp")),
+        "{report:?}"
+    );
+    assert!(
+        report
+            .viewer_transports
+            .iter()
+            .any(|path| path.protocol == Some("udp")),
+        "missing viewer transport: {report:?}"
+    );
     let [b, g, r, _] = report.last_pixel_bgra;
     assert!(
         r > g && g > b && r > 180 && b < 80,

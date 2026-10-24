@@ -62,3 +62,57 @@ pub fn summarize(samples: &[FrameSample]) -> Result<BenchmarkSummary, MetricsErr
         meets_minimum_duration: duration_ms >= 600_000,
     })
 }
+
+/// Monotonic application receive times for audible decoded PCM. This is not
+/// speaker playback timing or a packet-loss measure.
+#[derive(Default)]
+pub struct AudioContinuity {
+    last_ms: u64,
+    max_gap_ms: u64,
+    frames: [u64; 2],
+    invalid: bool,
+}
+pub struct AudioContinuityReport {
+    pub audible_frames: [u64; 2],
+    pub max_gap_ms: u64,
+    pub continuous: bool,
+}
+impl AudioContinuity {
+    pub fn observe(&mut self, second_phase: bool, elapsed_ms: u64) {
+        if elapsed_ms < self.last_ms {
+            self.invalid = true;
+        }
+        self.max_gap_ms = self.max_gap_ms.max(elapsed_ms.saturating_sub(self.last_ms));
+        self.last_ms = elapsed_ms;
+        self.frames[usize::from(second_phase)] += 1;
+    }
+    pub fn finish(mut self, duration_ms: u64) -> AudioContinuityReport {
+        if duration_ms < self.last_ms {
+            self.invalid = true;
+        }
+        self.max_gap_ms = self
+            .max_gap_ms
+            .max(duration_ms.saturating_sub(self.last_ms));
+        AudioContinuityReport {
+            audible_frames: self.frames,
+            max_gap_ms: self.max_gap_ms,
+            continuous: !self.invalid
+                && self.frames.iter().all(|count| *count > 0)
+                && self.max_gap_ms < 250,
+        }
+    }
+}
+
+/// Nearest-rank p50, p95 and maximum for validated application frame ages.
+pub fn latency_percentiles(samples: &mut [u32]) -> Option<[u32; 3]> {
+    if samples.is_empty() {
+        return None;
+    }
+    samples.sort_unstable();
+    let n = samples.len();
+    Some([
+        samples[(n * 50).div_ceil(100) - 1],
+        samples[(n * 95).div_ceil(100) - 1],
+        samples[n - 1],
+    ])
+}
