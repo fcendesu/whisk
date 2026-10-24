@@ -1,0 +1,6 @@
+.DS_Store
+/target/
+.superpowers/
+.env
+.env.*
+!.env.example
