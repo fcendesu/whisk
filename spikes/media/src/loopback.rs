@@ -1,7 +1,7 @@
 //! Native generated or explicitly selected capture video through a self-hosted SFU.
 use crate::{
     capture::VideoFrame as BgraFrame,
-    room::{ProbeRoom, connect_probe},
+    room::{IcePolicy, ProbeRoom, connect_probe_with_policy},
 };
 use futures_util::StreamExt;
 use livekit::{
@@ -59,7 +59,26 @@ pub async fn run_loopback(
     viewer_token: &str,
     duration: Duration,
 ) -> Result<LoopbackReport, MediaError> {
-    run_internal(url, publisher_token, viewer_token, duration, None, None).await
+    run_loopback_with_policy(url, publisher_token, viewer_token, duration, IcePolicy::All).await
+}
+
+pub async fn run_loopback_with_policy(
+    url: &str,
+    publisher_token: &str,
+    viewer_token: &str,
+    duration: Duration,
+    policy: IcePolicy,
+) -> Result<LoopbackReport, MediaError> {
+    run_internal(
+        url,
+        publisher_token,
+        viewer_token,
+        duration,
+        None,
+        None,
+        policy,
+    )
+    .await
 }
 
 async fn run_internal(
@@ -69,6 +88,7 @@ async fn run_internal(
     duration: Duration,
     target: Option<PreviewTarget>,
     mut input: Option<tokio::sync::watch::Receiver<crate::capture::FrameEvent>>,
+    policy: IcePolicy,
 ) -> Result<LoopbackReport, MediaError> {
     if target.as_ref().is_some_and(PreviewTarget::cancelled) {
         return Err(MediaError::Cancelled);
@@ -92,11 +112,11 @@ async fn run_internal(
         input.mark_changed();
     }
     let publisher = tokio::select! {
-        result = connect_probe(url, publisher_token) => result.map_err(|_| MediaError::Connect)?,
+        result = connect_probe_with_policy(url, publisher_token, Duration::from_secs(10), policy) => result.map_err(|_| MediaError::Connect)?,
         _ = wait_cancelled(target.as_ref()) => return Err(MediaError::Cancelled),
     };
     let viewer_result = tokio::select! {
-        result = connect_probe(url, viewer_token) => result.map_err(|_| MediaError::Connect),
+        result = connect_probe_with_policy(url, viewer_token, Duration::from_secs(10), policy) => result.map_err(|_| MediaError::Connect),
         _ = wait_cancelled(target.as_ref()) => Err(MediaError::Cancelled),
     };
     let mut viewer = match viewer_result {
@@ -331,6 +351,7 @@ pub async fn run_loopback_preview(
         duration,
         Some(target),
         None,
+        IcePolicy::All,
     )
     .await
 }
@@ -368,6 +389,7 @@ pub async fn run_capture_preview(
         duration,
         Some(target),
         Some(input),
+        IcePolicy::All,
     )
     .await
 }

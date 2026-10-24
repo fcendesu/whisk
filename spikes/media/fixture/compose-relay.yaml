@@ -1,0 +1,25 @@
+# Disposable UDP TURN proof. Only signaling and TURN are exposed to the host.
+services:
+  livekit:
+    image: livekit/livekit-server:v1.13.10@sha256:89ca9ce0791e18d6e03bf6e2c49ceb27e1c754eae8bd50c989386c1a5963791a
+    command: ["--dev", "--bind", "0.0.0.0", "--node-ip", "127.0.0.1"]
+    environment:
+      LIVEKIT_CONFIG: |
+        rtc:
+          use_external_ip: false
+          use_ice_lite: true
+          enable_loopback_candidate: true
+          stun_servers:
+            - "127.0.0.1:9"
+        turn:
+          enabled: true
+          udp_port: 3478
+          tls_port: 0
+          relay_range_start: 30000
+          relay_range_end: 30100
+          # The relay may reach only this container's loopback SFU.
+          allow_restricted_peer_cidrs:
+            - "127.0.0.1/32"
+    ports:
+      - "127.0.0.1::7880"
+      - "127.0.0.1:3478:3478/udp"

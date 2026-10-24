@@ -109,6 +109,64 @@ async fn decoded_frames_are_delivered_to_preview() {
 static MEDIA_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 #[tokio::test]
+#[ignore = "requires ordinary loopback SFU without TURN"]
+async fn required_relay_media_refuses_the_available_direct_route_without_turn() {
+    use media_spike::{loopback::run_loopback_with_policy, room::IcePolicy};
+    let _lock = MEDIA_TEST_LOCK.lock().await;
+    let result = tokio::time::timeout(
+        Duration::from_secs(20),
+        run_loopback_with_policy(
+            &env::var("LIVEKIT_URL").expect("set LIVEKIT_URL"),
+            &env::var("LIVEKIT_PUBLISH_TOKEN").expect("set publisher token"),
+            &env::var("LIVEKIT_TOKEN").expect("set viewer token"),
+            Duration::from_secs(3),
+            IcePolicy::RelayOnly,
+        ),
+    )
+    .await
+    .expect("missing-TURN media failure exceeded deadline");
+    assert!(matches!(result, Err(MediaError::Connect)), "{result:?}");
+}
+
+#[tokio::test]
+#[ignore = "requires local TURN fixture and LIVEKIT_RELAY_URL"]
+async fn required_relay_carries_h264_on_both_publisher_and_viewer_paths() {
+    use media_spike::{loopback::run_loopback_with_policy, room::IcePolicy};
+    let _lock = MEDIA_TEST_LOCK.lock().await;
+    let report = tokio::time::timeout(
+        Duration::from_secs(40),
+        run_loopback_with_policy(
+            &env::var("LIVEKIT_RELAY_URL").expect("set LIVEKIT_RELAY_URL"),
+            &env::var("LIVEKIT_PUBLISH_TOKEN").expect("set publisher token"),
+            &env::var("LIVEKIT_TOKEN").expect("set viewer token"),
+            Duration::from_secs(3),
+            IcePolicy::RelayOnly,
+        ),
+    )
+    .await
+    .expect("relay media deadline exceeded")
+    .expect("relay media failed");
+    assert!(report.submitted_frames >= 30, "{report:?}");
+    assert!(report.decoded_frames >= 10, "{report:?}");
+    assert_eq!((report.received_width, report.received_height), (1280, 720));
+    assert_eq!(report.codec.as_deref(), Some("video/H264"));
+    let [b, g, r, _] = report.last_pixel_bgra;
+    assert!(r > g && g > b && r > 180 && b < 80, "{report:?}");
+    for paths in [&report.publisher_transports, &report.viewer_transports] {
+        assert!(!paths.is_empty(), "missing ICE diagnostics: {report:?}");
+        assert!(
+            paths.iter().all(|path| {
+                path.local_candidate_type == Some("relay")
+                    && path.state == Some("succeeded")
+                    && path.bytes_sent + path.bytes_received > 0
+            }),
+            "non-relay or inactive path: {report:?}"
+        );
+    }
+    assert!(!report.high_quality_certified);
+}
+
+#[tokio::test]
 #[ignore = "requires loopback SFU and LIVEKIT_NOISE_TOKEN with publish grant"]
 async fn unrelated_room_video_is_not_mistaken_for_this_publish() {
     use livekit::{

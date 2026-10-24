@@ -195,7 +195,7 @@ room also does not prove working audio/video.
   travels through the frame channel and survives sender closure. Its regression
   test failed before the repair, then passed.
 
-Run all eleven opt-in SFU tests with `./scripts/test-native-media.sh`. This operator
+Run all thirteen opt-in SFU tests with `./scripts/test-native-media.sh`. This operator
 script issues fresh local fixture tokens without printing them; tests sharing
 identities serialize. Tests still require the explicitly started local Docker SFU
 and do not contact a cloud account. Stop the fixture when finished.
@@ -441,8 +441,40 @@ A review caught a shutdown race in an initial automatic-on-quit export; that
 promise was removed in favor of the explicit save acknowledgement.
 
 Current verification: 33 deterministic Rust tests, two Python counter-filtering
-tests and eleven explicit local-SFU tests pass, plus formatting/clippy/shell checks.
+tests and thirteen explicit local-SFU tests pass, plus formatting/clippy/shell checks.
 Remote CI has not been run. The current development app bundle is held unchanged
 while the user re-enables its screen access. Captured-window UI measurements,
 permission persistence/revocation, and physical microphone/speaker tests remain
 unverified; full M0 is not marked complete.
+
+
+## Successful local TURN media — 2026-10-25
+
+`media-spike --loopback-relay` applies `RelayOnly` to both native room
+connections. The [measured UDP TURN report](results/2026-10-25-macos-arm64-turn-udp-loopback.json)
+records generated 1280×720 H.264 through the embedded self-hosted relay, with
+VideoToolbox encoding/decoding and selected local `relay` candidates on both
+publisher and viewer paths. This is a three-second local media proof, not a
+TURN/TLS, restrictive-firewall, public deployment, or sustained-quality claim.
+It sends generated pixels and uses no screen or microphone permission.
+
+`./scripts/test-native-media.sh` now creates a separate disposable relay fixture
+as well as the signaling-only failure fixture. It checks decoded colors and
+dimensions, successful relay candidates and nonzero transport byte counters on
+both media legs. A separate test against the ordinary no-TURN fixture proves
+that required-relay media fails instead of silently using available direct UDP.
+Both extra Compose projects are removed on exit. Ports 3478/UDP must be available;
+signaling uses an assigned loopback port. RTC ports and relay-allocation ports
+are not published from the TURN fixture. No host firewall is changed.
+
+The fixture enables loopback candidates and permits the embedded relay to reach
+only the container's loopback SFU address; the server also enforces its embedded
+media-port policy. Its allocation range has room for both native participants.
+Configuration follows the [pinned LiveKit TURN settings](https://raw.githubusercontent.com/livekit/livekit/v1.13.10/config-sample.yaml)
+and [embedded relay implementation](https://raw.githubusercontent.com/livekit/livekit/v1.13.10/pkg/service/turn.go).
+These development-only settings do not change a production deployment.
+
+The current Media Lab bundle remains unchanged. Screen-recording settings show
+the correct app enabled, but its preflight still reports denial after a Finder
+restart. Captured-window UI measurements remain pending resolution of that
+permission mismatch. M0 remains incomplete.
