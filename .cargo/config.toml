@@ -1,0 +1,3 @@
+# Required by LiveKit's native Objective-C WebRTC bindings.
+[target.'cfg(target_os = "macos")']
+rustflags = ["-C", "link-arg=-ObjC"]

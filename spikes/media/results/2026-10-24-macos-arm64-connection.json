@@ -1,0 +1,1 @@
+{"sdk":"0.9.7","platform":"macos","arch":"aarch64","join_ms":199,"states":[{"elapsed_ms":199,"state":"connected"},{"elapsed_ms":2204,"state":"disconnected"}],"ice_detail":"not exposed by room events; candidate-pair and UDP/TURN checks pending","media_verified":false}
