@@ -1,4 +1,4 @@
-//! Native synthetic video through a self-hosted SFU. Never screen-content certification.
+//! Native generated or explicitly selected capture video through a self-hosted SFU.
 use crate::{
     capture::VideoFrame as BgraFrame,
     room::{ProbeRoom, connect_probe},
@@ -35,6 +35,7 @@ pub struct LoopbackReport {
 #[serde(tag = "error", rename_all = "snake_case")]
 pub enum MediaError {
     Cancelled,
+    Capture,
     InvalidInput,
     Connect,
     Publish,
@@ -56,7 +57,7 @@ pub async fn run_loopback(
     viewer_token: &str,
     duration: Duration,
 ) -> Result<LoopbackReport, MediaError> {
-    run_internal(url, publisher_token, viewer_token, duration, None).await
+    run_internal(url, publisher_token, viewer_token, duration, None, None).await
 }
 
 async fn run_internal(
@@ -65,6 +66,7 @@ async fn run_internal(
     viewer_token: &str,
     duration: Duration,
     target: Option<PreviewTarget>,
+    mut input: Option<tokio::sync::watch::Receiver<crate::capture::FrameEvent>>,
 ) -> Result<LoopbackReport, MediaError> {
     if target.as_ref().is_some_and(PreviewTarget::cancelled) {
         return Err(MediaError::Cancelled);
@@ -75,6 +77,17 @@ async fn run_internal(
         || viewer_token.trim().is_empty()
     {
         return Err(MediaError::InvalidInput);
+    }
+    if let Some(input) = input.as_mut() {
+        if input.has_changed().is_err()
+            || matches!(
+                &*input.borrow(),
+                crate::capture::FrameEvent::Error(_) | crate::capture::FrameEvent::Finished(_)
+            )
+        {
+            return Err(MediaError::Capture);
+        }
+        input.mark_changed();
     }
     let publisher = tokio::select! {
         result = connect_probe(url, publisher_token) => result.map_err(|_| MediaError::Connect)?,
@@ -91,7 +104,7 @@ async fn run_internal(
             return Err(error);
         }
     };
-    let result = pipeline(&publisher, &mut viewer, duration, target.as_ref()).await;
+    let result = pipeline(&publisher, &mut viewer, duration, target.as_ref(), input).await;
     let publisher_closed = publisher.close().await;
     let viewer_closed = viewer.close().await;
     let report = result?;
@@ -105,6 +118,7 @@ async fn pipeline(
     viewer: &mut ProbeRoom,
     duration: Duration,
     target: Option<&PreviewTarget>,
+    mut input: Option<tokio::sync::watch::Receiver<crate::capture::FrameEvent>>,
 ) -> Result<LoopbackReport, MediaError> {
     let source = NativeVideoSource::new(
         VideoResolution {
@@ -114,7 +128,11 @@ async fn pipeline(
         true,
     );
     let track = LocalVideoTrack::create_video_track(
-        "whisk-m0-synthetic-screen",
+        if input.is_some() {
+            "whisk-m0-selected-window"
+        } else {
+            "whisk-m0-synthetic-screen"
+        },
         RtcVideoSource::Native(source.clone()),
     );
     let publication = timeout(
@@ -158,12 +176,19 @@ async fn pipeline(
         let bgra: Vec<u8> = [40, 140, 230, 255].into_iter().cycle().take(1280 * 720 * 4).collect();
         let pattern = BgraFrame { width: 1280, height: 720, bgra: bgra.into() };
         let mut report = LoopbackReport { submitted_frames:0, decoded_frames:0, received_width:0, received_height:0, last_pixel_bgra:[0;4], codec:None, encoder:None, decoder:None, duration_ms:0, high_quality_certified:false };
+        let captured = input.is_some();
         loop {
             tokio::select! {
                 _ = sleep_until(end) => break,
                 _ = wait_cancelled(target) => return Err(MediaError::Cancelled),
-                _ = ticks.tick() => {
+                _ = ticks.tick(), if !captured => {
                     let buffer = bgra_to_i420(&pattern)?;
+                    let frame = VideoFrame { rotation: VideoRotation::VideoRotation0, timestamp_us: started.elapsed().as_micros().min(i64::MAX as u128) as i64, frame_metadata:None, buffer };
+                    if source.capture_frame(&frame) { report.submitted_frames += 1; }
+                }
+                capture = next_capture_frame(&mut input), if captured => {
+                    let captured_frame = capture?;
+                    let buffer = bgra_to_i420(&captured_frame)?;
                     let frame = VideoFrame { rotation: VideoRotation::VideoRotation0, timestamp_us: started.elapsed().as_micros().min(i64::MAX as u128) as i64, frame_metadata:None, buffer };
                     if source.capture_frame(&frame) { report.submitted_frames += 1; }
                 }
@@ -179,7 +204,7 @@ async fn pipeline(
                     let bgra = decoded_bgra(&frame)?;
                     let pixel: [u8; 4] = bgra.bgra[..4].try_into().map_err(|_| MediaError::Decode)?;
                     // Exclude SDK-generated black keepalive frames from our proof.
-                    if pixel[..3].iter().all(|value| *value < 15) { continue; }
+                    if !captured && pixel[..3].iter().all(|value| *value < 15) { continue; }
                     if let Some(target) = target { target.frames.send(crate::capture::FrameEvent::Frame(std::sync::Arc::new(bgra.clone()))); }
                     report.decoded_frames += 1;
                     report.received_width = bgra.width;
@@ -295,7 +320,15 @@ pub async fn run_loopback_preview(
     duration: Duration,
     target: PreviewTarget,
 ) -> Result<LoopbackReport, MediaError> {
-    run_internal(url, publisher_token, viewer_token, duration, Some(target)).await
+    run_internal(
+        url,
+        publisher_token,
+        viewer_token,
+        duration,
+        Some(target),
+        None,
+    )
+    .await
 }
 
 impl PreviewTarget {
@@ -312,5 +345,43 @@ async fn wait_cancelled(target: Option<&PreviewTarget>) {
             }
             tokio::time::sleep(Duration::from_millis(50)).await;
         },
+    }
+}
+
+/// Relay only frames provided by an explicitly selected native capture stream.
+pub async fn run_capture_preview(
+    url: &str,
+    publisher_token: &str,
+    viewer_token: &str,
+    duration: Duration,
+    input: tokio::sync::watch::Receiver<crate::capture::FrameEvent>,
+    target: PreviewTarget,
+) -> Result<LoopbackReport, MediaError> {
+    run_internal(
+        url,
+        publisher_token,
+        viewer_token,
+        duration,
+        Some(target),
+        Some(input),
+    )
+    .await
+}
+
+async fn next_capture_frame(
+    input: &mut Option<tokio::sync::watch::Receiver<crate::capture::FrameEvent>>,
+) -> Result<std::sync::Arc<BgraFrame>, MediaError> {
+    use crate::capture::FrameEvent;
+    let Some(input) = input else {
+        return std::future::pending().await;
+    };
+    loop {
+        input.changed().await.map_err(|_| MediaError::Capture)?;
+        let event = input.borrow_and_update().clone();
+        match event {
+            FrameEvent::Frame(frame) => return Ok(frame),
+            FrameEvent::Pending => {}
+            FrameEvent::Error(_) | FrameEvent::Finished(_) => return Err(MediaError::Capture),
+        }
     }
 }

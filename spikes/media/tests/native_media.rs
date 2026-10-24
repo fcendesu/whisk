@@ -184,3 +184,86 @@ async fn stopped_preview_cancels_a_running_media_session() {
         .unwrap();
     assert!(matches!(result, Err(MediaError::Cancelled)), "{result:?}");
 }
+
+// Replacing the capture input with the synthetic orange source must fail this test.
+#[tokio::test]
+#[ignore = "requires loopback SFU with distinct publish and view tokens"]
+async fn supplied_capture_frames_cross_the_sfu_instead_of_the_generated_pattern() {
+    use media_spike::{
+        capture::{FrameEvent, VideoFrame, frame_channel},
+        loopback::{PreviewTarget, run_capture_preview},
+    };
+    use std::sync::{Arc, atomic::AtomicU64};
+    let _lock = MEDIA_TEST_LOCK.lock().await;
+    let (input, receiver) = frame_channel();
+    let (output, decoded) = frame_channel();
+    let target = PreviewTarget {
+        frames: output,
+        generation: Arc::new(AtomicU64::new(1)),
+        session: 1,
+    };
+    let blue = Arc::new(VideoFrame {
+        width: 1280,
+        height: 720,
+        bgra: [230, 120, 40, 255]
+            .into_iter()
+            .cycle()
+            .take(1280 * 720 * 4)
+            .collect::<Vec<_>>()
+            .into(),
+    });
+    let feeder = tokio::spawn(async move {
+        for _ in 0..600 {
+            input.send(FrameEvent::Frame(blue.clone()));
+            tokio::time::sleep(Duration::from_millis(33)).await;
+        }
+    });
+    let result = run_capture_preview(
+        &env::var("LIVEKIT_URL").unwrap(),
+        &env::var("LIVEKIT_PUBLISH_TOKEN").unwrap(),
+        &env::var("LIVEKIT_TOKEN").unwrap(),
+        Duration::from_secs(2),
+        receiver,
+        target,
+    )
+    .await;
+    feeder.abort();
+    let report = result.expect("capture relay failed");
+    assert!(
+        report.submitted_frames >= 20 && report.decoded_frames >= 10,
+        "{report:?}"
+    );
+    let FrameEvent::Frame(frame) = &*decoded.borrow() else {
+        panic!("no decoded capture");
+    };
+    assert!(
+        frame.bgra[0] > 180 && frame.bgra[2] < 80,
+        "capture input replaced or channels swapped"
+    );
+}
+
+#[tokio::test]
+async fn failed_capture_is_rejected_before_connecting() {
+    use media_spike::{
+        capture::{CaptureError, FrameEvent, frame_channel},
+        loopback::{PreviewTarget, run_capture_preview},
+    };
+    use std::sync::{Arc, atomic::AtomicU64};
+    let (input, receiver) = frame_channel();
+    input.send(FrameEvent::Error(CaptureError::PermissionDenied));
+    let (output, _) = frame_channel();
+    let result = run_capture_preview(
+        "bad-url",
+        "publisher",
+        "viewer",
+        Duration::from_secs(1),
+        receiver,
+        PreviewTarget {
+            frames: output,
+            generation: Arc::new(AtomicU64::new(1)),
+            session: 1,
+        },
+    )
+    .await;
+    assert!(matches!(result, Err(MediaError::Capture)), "{result:?}");
+}

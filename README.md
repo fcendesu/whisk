@@ -12,7 +12,8 @@ Implementation is in **M0: native media feasibility**. The workspace now has a
 real LiveKit connection probe and a runnable **Whisk Media Lab** GPUI window with
 the provided icon, source discovery, local screen/window preview, and a GPU test
 pattern. Native H.264 publishing, SFU forwarding, and remote-frame decode into
-GPUI are also exercised by a synthetic network test. The production messaging desktop and backend are pending.
+GPUI work with generated frames and explicitly selected captured windows.
+The production messaging desktop and backend are pending.
 
 On macOS, build and open the preview from this checkout:
 
@@ -21,7 +22,8 @@ On macOS, build and open the preview from this checkout:
 ```
 
 It creates `target/Whisk Media Lab.app`. Capture starts only when you select a
-source; this build does not broadcast it. Screen access is checked without
+source and remains local until **Publish selected window** is clicked with the
+network fixture configured. Screen access is checked without
 opening a permission prompt. If macOS denies access, the window explains how to
 allow it manually and retry.
 
@@ -53,3 +55,6 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 Live SFU tests are explicit opt-in tests (`./scripts/test-native-media.sh`).
 `./scripts/run-media-lab.sh --network` opens the separate network-video test app.
 Follow the probe README for setup, measured evidence, and remaining M0 gates.
+
+`./scripts/run-media-lab.sh --capture-network` enables the selected-window
+publish/decode test using the local fixture. Selecting a source alone stays local.

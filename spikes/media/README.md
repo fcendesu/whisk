@@ -15,6 +15,10 @@ asset. This is a media feasibility shell, not the messaging application.
 - **Refresh sources** checks existing screen-recording access, then discovers
   displays and titled windows on a background worker.
 - Select a source to request a 1280×720, 30 FPS local preview.
+- **Publish selected window** explicitly sends only the selected window to the
+  configured SFU, decodes it as a second participant, and stops after 30 seconds.
+  Display publishing is not enabled in this probe. Use the capture-network launch
+  command below to supply the local fixture credentials.
 - **Stop preview** clears the image and invalidates pending starts. A full command
   queue cannot discard the cancellation signal; the worker also checks generation.
 
@@ -50,6 +54,20 @@ If the fixture tokens expire before another test, close and relaunch with the
 script to issue fresh tokens. The fixture is left running; teardown is explicit
 with the Compose command below.
 
+For real captured-window publishing, close the existing Media Lab first, then run:
+
+```sh
+./scripts/run-media-lab.sh --capture-network
+```
+
+This rebuilds the same `Whisk Media Lab.app` identity used for manually granted
+screen access and supplies the loopback fixture credentials. Refresh sources,
+select a window for local preview, then click **Publish selected window**. Selecting
+alone never publishes. Stop, source replacement, app shutdown, capture failure,
+and the 30-second deadline end the session and release the native capture stream.
+Tokens are minted after compilation; relaunch if the two-minute join window has
+expired. No microphone or system audio is captured by this path.
+
 A shorter CLI run produces a JSON measurement record:
 
 ```sh
@@ -62,7 +80,7 @@ unset LIVEKIT_PUBLISH_TOKEN LIVEKIT_TOKEN
 
 The decoder matches this run's publication SID, so unrelated room publishers
 cannot supply the test's frames. Reports count application-submitted and decoded
-frames separately, exclude the SDK's black keepalive from decoded proof, and read
+frames separately, exclude the SDK's black keepalive from generated-pattern proof, and read
 codec/encoder/decoder implementation from actual WebRTC stats. Implementation
 strings such as VideoToolbox identify the reported backend; they are not a
 certification of hardware acceleration or a high-quality profile. Empty stats
@@ -147,7 +165,7 @@ room also does not prove working audio/video.
   viewer consuming 180 frames with a queue depth of at most two.
 - The packaged app opens; clicking the test button renders the GPU surface and
   Stop clears it. Refresh reports this machine's ungranted screen access.
-- Native screen pixels remain unverified because capture access is not granted.
+- Capture access was subsequently granted manually; see captured-window evidence below.
 - Independent review found an active-window image cleanup issue; cleanup now
   defers until GPUI restores the window. Pattern/Stop cycling was checked manually;
   there is no automated GPU-allocation regression test.
@@ -169,7 +187,7 @@ room also does not prove working audio/video.
   travels through the frame channel and survives sender closure. Its regression
   test failed before the repair, then passed.
 
-Run all seven opt-in SFU tests with `./scripts/test-native-media.sh`. This operator
+Run all eight opt-in SFU tests with `./scripts/test-native-media.sh`. This operator
 script issues fresh local fixture tokens without printing them; tests sharing
 identities serialize. Tests still require the explicitly started local Docker SFU
 and do not contact a cloud account. Stop the fixture when finished.
@@ -230,3 +248,22 @@ support is claimed. M1 and later milestones remain gated on M0 evidence.
 Upstream references: [pinned SDK source](https://docs.rs/crate/livekit/0.9.7/source/),
 [macOS build requirements](https://github.com/livekit/rust-sdks#macos), and
 [server release](https://github.com/livekit/livekit/releases/tag/v1.13.10).
+
+## Captured-window evidence — 2026-10-24
+
+- The user enabled screen recording access. Native source discovery and local
+  capture of a Whisk test window now work. Changing that window updates the preview.
+- [Thirty-second captured-window report](results/2026-10-24-macos-arm64-captured-window.json):
+  869 submitted frames, 870 decoder outputs, 1280×720, H.264 with reported
+  VideoToolbox encoder/decoder. The GPUI view visibly showed the test window, then
+  its change from a checkerboard to an idle screen after the SFU round trip.
+- Captured content can legitimately be black, so capture-mode decoder counts
+  include SDK keepalive outputs. Counts are not a one-to-one delivery/drop metric
+  or GPU presentation counter. No screenshot, title, token or endpoint is saved
+  in the report. No captured screen was sent outside the local fixture.
+- A live regression supplies blue capture frames and verifies blue decoded pixels;
+  substituting the synthetic orange source fails. A deterministic regression
+  rejects an already failed capture before connecting. Generation cancellation
+  and terminal frame-channel handling are shared with the network preview.
+- Permission revocation, microphone/audio continuity, raw ICE/UDP/TURN diagnostics,
+  sustained CPU/GPU/latency measurements and high-profile certification remain open.

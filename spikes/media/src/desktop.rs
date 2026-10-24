@@ -82,9 +82,9 @@ impl MediaLab {
                         self.selected = None;
                     }
                 },
-                Event::NetworkStarted(id, frames) if id == generation => {
+                Event::NetworkStarted(id, frames, captured) if id == generation => {
                     self.frames = Some(frames);
-                    self.status = "Native H.264 → local SFU → native decode → GPUI. Sending a generated pattern only; this test lasts 30 seconds.".into();
+                    self.status = if captured { "Publishing selected window → H.264 → configured SFU → native decode → GPUI. Stops after 30 seconds." } else { "Native H.264 → configured SFU → native decode → GPUI. Sending a generated pattern only; this test lasts 30 seconds." }.into();
                 }
                 Event::NetworkFinished(id, result) if id == generation => {
                     self.frames = None;
@@ -170,8 +170,36 @@ impl MediaLab {
         self.clear_preview(cx);
         self.selected = None;
         let id = self.worker.next_generation();
-        self.status = if self.worker.commands.try_send(Command::Loopback(id)).is_ok() {
+        self.status = if self
+            .worker
+            .commands
+            .try_send(Command::Loopback(id, None))
+            .is_ok()
+        {
             "Connecting two native participants to the configured SFU…"
+        } else {
+            "Media worker is busy. Retry shortly."
+        }
+        .into();
+        cx.notify();
+    }
+    fn publish_selected(&mut self, cx: &mut Context<Self>) {
+        let Some(source @ SourceId::Window(_)) = self.selected else {
+            self.status =
+                "Select a window for local preview first, then click Publish selected window."
+                    .into();
+            cx.notify();
+            return;
+        };
+        self.clear_preview(cx);
+        let id = self.worker.next_generation();
+        self.status = if self
+            .worker
+            .commands
+            .try_send(Command::Loopback(id, Some(source)))
+            .is_ok()
+        {
+            "Opening selected window for a 30-second publish/decode test…"
         } else {
             "Media worker is busy. Retry shortly."
         }
@@ -236,7 +264,7 @@ impl Render for MediaLab {
                             .bg(rgb(if self.selected == Some(id) { 0x48513e } else { 0x262d37 }))
                             .child(source.label.clone()).on_click(cx.listener(move |this, _, _, cx| this.start(id, cx)))
                     })))
-                .child(div().text_xs().text_color(rgb(0x8e98a7)).child("Screen previews stay local. The network test sends only a generated pattern to your configured SFU.")))
+                .child(div().text_xs().text_color(rgb(0x8e98a7)).child("Selecting a source opens a local preview. Publish selected window sends that window to your configured SFU for 30 seconds.")))
             .child(div().flex_1().min_w_0().h_full().flex().flex_col().p_6().gap_5()
                 .child(div().flex().items_center().justify_between()
                     .child(div().text_lg().font_weight(FontWeight::SEMIBOLD).child("Screen preview"))
@@ -247,9 +275,10 @@ impl Render for MediaLab {
                         .child(div().text_xl().child("A place for your next conversation"))
                         .child(div().text_sm().text_color(rgb(0x8e98a7)).child("Start by testing the native video surface.")))))
                 .child(div().w_full().min_w_0().text_sm().text_color(rgb(0xb1bac7)).child(self.status.clone()))
-                .child(div().flex().gap_3()
+                .child(div().flex().flex_wrap().gap_3()
                     .child(div().id("test-pattern").rounded_md().px_4().py_3().bg(rgb(0xf8b869)).text_color(rgb(0x25201a)).cursor_pointer().child("Test video surface").on_click(cx.listener(|this, _, _, cx| this.pattern(cx))))
                     .child(div().id("network").rounded_md().px_4().py_3().bg(rgb(0x303945)).cursor_pointer().child("Test network video").on_click(cx.listener(|this, _, _, cx| this.network(cx))))
+                    .child(div().id("publish-selected").rounded_md().px_4().py_3().bg(rgb(0x48513e)).cursor_pointer().child("Publish selected window").on_click(cx.listener(|this, _, _, cx| this.publish_selected(cx))))
                     .child(div().id("stop").rounded_md().px_4().py_3().bg(rgb(0x303945)).cursor_pointer().child("Stop preview").on_click(cx.listener(|this, _, _, cx| this.stop(cx)))))
                 .child(div().text_xs().text_color(rgb(0x727e90)).child("M0 feasibility build · ScreenCaptureKit → bounded frame handoff → GPUI · Voice and messaging are not connected yet.")))
     }

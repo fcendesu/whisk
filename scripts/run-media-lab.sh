@@ -11,18 +11,19 @@ WHISK_BUNDLE_NAME='Whisk Media Lab'
 WHISK_BUNDLE_ID='dev.whisk.media-lab'
 case "${1:-}" in
   '') ;;
-  --network)
-    WHISK_BUNDLE_NAME='Whisk Network Lab'
-    WHISK_BUNDLE_ID='dev.whisk.network-lab'
+  --network|--capture-network)
+    if [ "$1" = --network ]; then
+      WHISK_BUNDLE_NAME='Whisk Network Lab'
+      WHISK_BUNDLE_ID='dev.whisk.network-lab'
+    fi
     docker compose -f spikes/media/fixture/compose.yaml up -d
     curl -fsS --retry 5 --retry-connrefused --retry-delay 1 http://127.0.0.1:7880 >/dev/null
-    LIVEKIT_URL=ws://127.0.0.1:7880
-    LIVEKIT_PUBLISH_TOKEN=$(python3 spikes/media/fixture/token.py --publisher)
-    LIVEKIT_TOKEN=$(python3 spikes/media/fixture/token.py)
-    WHISK_MEDIA_NETWORK_MODE=1
-    export LIVEKIT_URL LIVEKIT_PUBLISH_TOKEN LIVEKIT_TOKEN WHISK_MEDIA_NETWORK_MODE
+    if [ "$1" = --network ]; then
+      WHISK_MEDIA_NETWORK_MODE=1
+      export WHISK_MEDIA_NETWORK_MODE
+    fi
     ;;
-  *) echo 'Usage: run-media-lab.sh [--network]' >&2; exit 1 ;;
+  *) echo 'Usage: run-media-lab.sh [--network|--capture-network]' >&2; exit 1 ;;
 esac
 cargo build --locked -p media-spike --features desktop --bin whisk-desktop-spike
 WHISK_BUNDLE="$WHISK_PROJECT_ROOT/target/$WHISK_BUNDLE_NAME.app"
@@ -41,7 +42,7 @@ cat > "$WHISK_BUNDLE/Contents/Info.plist" <<'PLIST'
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleIconFile</key><string>whisk.icns</string>
 <key>NSHighResolutionCapable</key><true/>
-<key>NSScreenCaptureUsageDescription</key><string>Whisk previews the screen or window you select. This build does not broadcast it.</string>
+<key>NSScreenCaptureUsageDescription</key><string>Whisk previews the screen or window you select. Publish selected window explicitly sends that window to your configured media server for a bounded test.</string>
 </dict></plist>
 PLIST
 python3 - "$WHISK_BUNDLE/Contents/Info.plist" "$WHISK_BUNDLE_NAME" "$WHISK_BUNDLE_ID" <<'PYTHON'
@@ -55,7 +56,12 @@ with open(path, "wb") as destination:
     plistlib.dump(data, destination)
 PYTHON
 codesign --force --deep --sign - "$WHISK_BUNDLE"
-if [ "${1:-}" = --network ]; then
+if [ "${1:-}" = --network ] || [ "${1:-}" = --capture-network ]; then
+  # Mint after compilation so build time cannot consume the 120-second join window.
+  LIVEKIT_URL=ws://127.0.0.1:7880
+  LIVEKIT_PUBLISH_TOKEN=$(python3 spikes/media/fixture/token.py --publisher)
+  LIVEKIT_TOKEN=$(python3 spikes/media/fixture/token.py)
+  export LIVEKIT_URL LIVEKIT_PUBLISH_TOKEN LIVEKIT_TOKEN
   "$WHISK_BUNDLE/Contents/MacOS/whisk-desktop-spike"
 else
   open "$WHISK_BUNDLE"
