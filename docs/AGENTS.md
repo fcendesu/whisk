@@ -7,7 +7,7 @@ Read `docs/prd.md` and `docs/superpowers/README.md` before changing implementati
 When the official `obra/superpowers` skills are installed in your coding environment:
 - Use brainstorming/design review for changes to product scope or unapproved architecture.
 - Use writing-plans for any scope not already covered by an approved plan.
-- Use an isolated git worktree when beginning implementation work.
+- Develop directly in the primary repository checkout on `main`, as requested by the owner. Use an isolated git worktree only when the owner explicitly requests one.
 - Apply test-driven development for behavior-changing tasks; verify the red test genuinely fails first.
 - Request/review spec compliance and code quality before merging; verify claims with current command output.
 - Respect per-task `Files`, `Interfaces`, `Run` and `Expected` blocks in `docs/superpowers/plans`.

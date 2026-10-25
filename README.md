@@ -47,6 +47,9 @@ require the audit specified by the PRD.
 
 ## Development
 
+Develop in the primary repository checkout on `main`. Create an isolated worktree
+only when explicitly requested by the owner.
+
 Rust 1.99.0 is pinned in `rust-toolchain.toml`; Cargo locks the dependency graph.
 The first build downloads and compiles LiveKit's native C++ WebRTC components.
 macOS needs Apple Command Line Tools and the configured `-ObjC` linker flag.
