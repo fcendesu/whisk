@@ -13,13 +13,15 @@ def encode(value):
     return base64.urlsafe_b64encode(value).rstrip(b"=")
 
 
-def token(publish=False):
+def token(publish=False, room="whisk-m0-smoke"):
+    if not room.strip():
+        raise ValueError("room must not be blank")
     now = int(time.time())
     header = encode(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
     claims = encode(json.dumps({
         "iss": "devkey", "sub": f"whisk-probe-{uuid.uuid4()}",
         "nbf": now - 5, "exp": now + 120,
-        "video": {"roomJoin": True, "room": "whisk-m0-smoke",
+        "video": {"roomJoin": True, "room": room,
                   "canPublish": publish, "canSubscribe": True,
                   "canPublishData": False},
     }).encode())
@@ -29,6 +31,7 @@ def token(publish=False):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--publisher", action="store_true", help="allow screen-video publish in the local smoke room")
+    parser.add_argument("--publisher", action="store_true", help="allow media publishing in the chosen local fixture room")
+    parser.add_argument("--room", default="whisk-m0-smoke", help="operator-selected fixture room")
     args = parser.parse_args()
-    print(token(publish=args.publisher))
+    print(token(publish=args.publisher, room=args.room))

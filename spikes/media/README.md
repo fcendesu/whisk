@@ -234,24 +234,23 @@ probe; background subscription/layer adaptation remains future M5 work.
 
 ## Remaining M0 gates
 
-- Task 2: exercise display/window capture and revocation with actual granted OS
-  permission; the native adapter, permission-denial path and frame handoff exist.
-- Task 3: connect actual captured frames after permission verification; generated
-  H.264 publish/decode and conservative profile-policy tests exist.
-- Task 4: instrument frame timing and GPU presentation/copy metrics. The remote
-  decoded frame → GPUI bridge has now been exercised in the network window.
-- Task 5: ten-minute hardware measurements with real capture and audio
-  continuity; the two-synthetic-publisher focus switch is now exercised.
-- Verify actual microphone publish/playback and audio continuity while switching
-  streams before declaring the milestone complete.
-- Record OS/hardware/driver/codec details, frame drops, latency and CPU/GPU use;
-  verify UDP/TURN failures, platform capture permissions, and SDK cancellation
-  cleanup under repeated failures. Timeout tests only prove caller deadlines.
-- Pin GPUI when checking its real renderer APIs. Audit dependency licenses and
-  native binaries before distribution; this connection slice is not that audit.
+Window capture, H.264 publish/decode, GPUI CPU preparation, physical microphone
+publish/decode, generated audio continuity during video switching, UDP TURN and
+controlled network failures have measured evidence below. M0 is incomplete:
 
-No 1080p60, 1440p60, GPU zero-copy, production deployment, or cross-platform media
-support is claimed. M1 and later milestones remain gated on M0 evidence.
+- Physical speaker playback and microphone continuity with actual video focus
+  switching still need device evidence; Audio Lab deliberately disables speakers.
+- Permission revocation, device removal/recovery and signing persistence remain
+  unverified. The unchanged screen bundle now works after an app-scoped reset.
+- Sustained actual-capture-to-GPUI behavior at higher profiles is not certified.
+  Ten-minute 1080/1440 records use generated video and native decode counters.
+- GPU presentation, per-process GPU/media-engine use, capture-to-display latency
+  and zero-copy remain unknown. CPU preparation and whole-system AGX counters
+  are reported under their actual scope.
+- Dependency/license and packaged-runtime audits remain required before release.
+
+No high-profile release certification, GPU zero-copy, production deployment or
+cross-platform media support is claimed. M1 remains gated on M0 evidence.
 
 Upstream references: [pinned SDK source](https://docs.rs/crate/livekit/0.9.7/source/),
 [macOS build requirements](https://github.com/livekit/rust-sdks#macos), and
@@ -440,12 +439,10 @@ preparation sample. It is a rendering/export check, not a sustained FPS result.
 A review caught a shutdown race in an initial automatic-on-quit export; that
 promise was removed in favor of the explicit save acknowledgement.
 
-Current verification: 33 deterministic Rust tests, two Python counter-filtering
-tests and thirteen explicit local-SFU tests pass, plus formatting/clippy/shell checks.
-Remote CI has not been run. The current development app bundle is held unchanged
-while the user re-enables its screen access. Captured-window UI measurements,
-permission persistence/revocation, and physical microphone/speaker tests remain
-unverified; full M0 is not marked complete.
+Current verification: 37 deterministic Rust tests, four Python tests and fifteen
+explicit local-SFU tests pass, plus formatting/clippy/shell checks. Remote CI has
+not been run. Screen-capture access/live preview and physical microphone
+publish/decode have been exercised. Full M0 is incomplete as described above.
 
 
 ## Successful local TURN media — 2026-10-25
@@ -534,3 +531,49 @@ certification. The metrics save acknowledgement was observed before export.
 All four bundle files still match their earlier SHA256 hashes. The current
 permission mismatch is resolved for this unchanged bundle; permission persistence
 across future signing changes and revocation behavior remain unverified.
+
+
+## Physical microphone probe — 2026-10-25
+
+```sh
+./scripts/run-audio-lab.sh
+# Quit the app, then reuse the signed bundle with fresh fixture tokens:
+./scripts/run-audio-lab.sh --reuse-build
+```
+
+The separate Whisk Audio Lab (`dev.whisk.audio-lab`) remains idle until its
+**Start 10-second microphone test** button is pressed. It declares its own macOS
+microphone purpose string, leaving the granted screen app unchanged. Every launch
+creates a unique room with separate short-lived publisher/viewer tokens, so
+ordinary probe clients cannot subscribe to the microphone. The UI rejects
+non-local fixture addresses before device access; this guard was manually
+verified with `example.invalid` and placeholder credentials.
+
+Pinned LiveKit `PlatformAudio` supplies CoreAudio microphone frames. The probe
+disables speaker playout before publishing, matches the expected publication
+SID, decodes mono 48 kHz PCM and saves counters only. No PCM, device identifiers,
+source names or credentials are retained. Stop signals cancellation; recording
+ends before asynchronous stats/unpublish/room-close cleanup. The physical capture
+budget includes track setup; connects precede device initialization. Synchronous
+native driver calls cannot be preempted by Rust async deadlines.
+
+The [user-started device report](results/2026-10-25-macos-arm64-microphone-loopback.json)
+records 740 decoded frames / 355,200 samples in a 7,445 ms decoded observation
+window, 81 frames above the input threshold, peak sample 5,302 and `audio/opus`,
+with active UDP paths on both participants. Setup consumed part of the ten-second
+capture budget. The UI acknowledged microphone off and counter-report save.
+This proves physical microphone publish/decode, not speaker audibility,
+continuous speech delivery or certified audio quality.
+
+Review found that Stop during joining could still enter device initialization.
+Two deterministic regressions failed, then passed with cancellation checks before
+and after source setup, dropping a cancelled source before publication. The
+saved device run preceded this repair; the rebuilt lab includes the repair,
+validated by those regressions and the full generated-input suite. Automated
+media tests never access physical devices or claim microphone verification.
+
+Final checks: 37 deterministic Rust, 15 live SFU and four Python tests pass;
+fmt/clippy/shell/diff checks and Audio Lab signature verification pass. Existing
+upstream future-compatibility notices remain. All four screen-bundle files still
+match their previously recorded SHA256 hashes. Physical speaker playback and the
+remaining M0 gates above are still open.

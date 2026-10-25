@@ -14,7 +14,10 @@ the provided icon, source discovery, local screen/window preview, and a GPU test
 pattern. Native H.264 publishing, SFU forwarding, and remote-frame decode into
 GPUI work with generated frames and explicitly selected captured windows.
 Generated-audio continuity, experimental profile attempts, optical frame-age
-measurements and selected ICE-path diagnostics are also implemented.
+measurements and selected ICE-path diagnostics are also implemented. Local UDP
+TURN media and physical microphone publish/decode have been verified. A separate
+**Whisk Audio Lab** provides an explicit, bounded microphone test with speaker
+playback off and counter-only reports.
 The production messaging desktop and backend are pending.
 
 On macOS, build and open the preview from this checkout:
@@ -60,3 +63,7 @@ Follow the probe README for setup, measured evidence, and remaining M0 gates.
 
 `./scripts/run-media-lab.sh --capture-network` enables the selected-window
 publish/decode test using the local fixture. Selecting a source alone stays local.
+
+`./scripts/run-audio-lab.sh` opens the separate microphone test app. Use
+`--reuse-build` with either lab launcher to preserve its existing signed bundle.
+Quit the app before relaunching to refresh short-lived fixture credentials.
