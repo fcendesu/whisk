@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-24-media-design.md` (read with `docs/prd.md`)
 
-**Status:** Planned, not executed. These paths/signatures are proposed; reconcile them with the pinned toolchain and real repository before implementing.
+**Status:** In progress. [GitHub tracker #3](https://github.com/fcendesu/whisk/issues/3) records completed baseline evidence and remaining gates. The original step checkboxes below are a planning record, not current execution status. Reconcile proposed paths/signatures with the actual workspace before further implementation.
 
 ## Global Constraints
 

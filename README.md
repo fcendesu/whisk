@@ -47,6 +47,11 @@ require the audit specified by the PRD.
 
 ## Development
 
+Follow the [GitHub roadmap](https://github.com/fcendesu/whisk/issues/2),
+[issue index](ISSUES.md), and [issue-first workflow](CONTRIBUTING.md). Each change
+starts with an issue containing acceptance criteria and ends with linked commits
+and verification evidence. CI is manual during development.
+
 Develop in the primary repository checkout on `main`. Create an isolated worktree
 only when explicitly requested by the owner.
 

@@ -19,8 +19,8 @@ The project's current product discussion is represented by `../prd.md` and the d
 
 1. Install Superpowers separately in your development agent; refer to the upstream docs at <https://github.com/obra/superpowers>.
 2. Review the feature design before running its plan. Record any amendments explicitly in an ADR; seek approval for user-visible changes.
-3. Work from a git worktree; run one plan task at a time, writing the failing test before implementation.
-4. Run the test commands, check real output and make small commits. Untested manual media spikes must have reproducible benchmark logs.
+3. Track each work item in [GitHub Issues](https://github.com/fcendesu/whisk/issues/2) with acceptance criteria and dependencies. Work directly in the primary checkout on `main`, as requested by the owner; use a worktree only on explicit request. Run one plan task at a time, writing a meaningful failing test before new behavior.
+4. Run relevant local test commands, check real output and make small issue-referenced commits. Post results and commit links on the issue; close only when its acceptance criteria pass. CI remains manual. Manual media spikes need reproducible benchmark logs.
 5. After each milestone, verify acceptance and update hardware/network compatibility matrices.
 
 All documented paths under `apps/`, `crates/`, `services/` or `deploy/` describe **intended future files**, not current contents. Their exact names can be revised before scaffolding as long as interface contracts are updated together.
