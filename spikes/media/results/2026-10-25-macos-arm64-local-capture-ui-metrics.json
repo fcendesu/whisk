@@ -1,0 +1,12 @@
+{
+  "mode": "local_capture",
+  "window_ms": 21333,
+  "cpu_prepared_frames": 605,
+  "ui_bgra_bytes_copied": 2230272000,
+  "max_queue_depth": 2,
+  "view_tree_builds": 607,
+  "image_preparation_p95_us": 991,
+  "observed_preparation_fps": 28.35981812215816,
+  "gpu_presented_frames": null,
+  "quality_certified": false
+}

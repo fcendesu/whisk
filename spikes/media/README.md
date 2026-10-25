@@ -514,3 +514,23 @@ visibly rendered the generated orange frame and acknowledged saving metrics.
 All four files inside the frozen Media Lab bundle had identical SHA256 hashes
 before and after the reuse run, and signature verification passed. Its refreshed
 capture preflight still reported denial; no privacy settings were changed.
+
+
+## Capture permission recovery verified — 2026-10-25
+
+After the user confirmed completing the app-scoped permission reset and re-add,
+the unchanged Media Lab successfully enumerated sources. Selecting only our
+Whisk Network Lab window displayed its checkerboard in the local preview.
+Stopping the source pattern visibly changed the captured image to the source
+window's idle view, confirming live updates. Capture was stopped afterward;
+no captured screen was published in this verification.
+
+The [local capture UI record](results/2026-10-25-macos-arm64-local-capture-ui-metrics.json)
+contains 605 CPU-prepared frames over 21,333 ms, approximately 28.36 preparation
+FPS, maximum queue depth two, and 991 µs p95 CPU image preparation. This is a
+short 720p30-requested preview check, not sustained-quality or GPU-presentation
+certification. The metrics save acknowledgement was observed before export.
+
+All four bundle files still match their earlier SHA256 hashes. The current
+permission mismatch is resolved for this unchanged bundle; permission persistence
+across future signing changes and revocation behavior remain unverified.
