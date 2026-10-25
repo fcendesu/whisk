@@ -59,6 +59,7 @@ async fn generated_opus_crosses_the_same_pipeline_without_claiming_microphone_ac
     );
     assert_eq!(report.codec.as_deref(), Some("audio/opus"));
     assert!(!report.microphone_verified && !report.playback_verified);
+    assert!(!report.playback_started && report.user_heard_tone.is_none());
     assert!(matches!(report.audio_source, AudioInput::Generated));
     assert!(!report.publisher_transports.is_empty() && !report.viewer_transports.is_empty());
     let json = serde_json::to_string(&report).unwrap();

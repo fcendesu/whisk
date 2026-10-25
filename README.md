@@ -17,7 +17,8 @@ Generated-audio continuity, experimental profile attempts, optical frame-age
 measurements and selected ICE-path diagnostics are also implemented. Local UDP
 TURN media and physical microphone publish/decode have been verified. A separate
 **Whisk Audio Lab** provides an explicit, bounded microphone test with speaker
-playback off and counter-only reports.
+playback off and counter-only reports. The separate **Whisk Speaker Lab** has a
+short generated-tone test with user-confirmed physical playback.
 The production messaging desktop and backend are pending.
 
 On macOS, build and open the preview from this checkout:
@@ -67,3 +68,6 @@ publish/decode test using the local fixture. Selecting a source alone stays loca
 `./scripts/run-audio-lab.sh` opens the separate microphone test app. Use
 `--reuse-build` with either lab launcher to preserve its existing signed bundle.
 Quit the app before relaunching to refresh short-lived fixture credentials.
+
+`./scripts/run-audio-lab.sh --speaker` opens the separate speaker test. It keeps
+the microphone off and requires explicit playback feedback before verification.

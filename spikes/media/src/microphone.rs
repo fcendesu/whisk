@@ -33,6 +33,7 @@ use tokio::time::{Instant, MissedTickBehavior, interval, sleep, sleep_until, tim
 pub enum AudioInput {
     Generated,
     Microphone,
+    SpeakerTest,
 }
 #[derive(Debug, Serialize)]
 pub struct AudioReport {
@@ -45,6 +46,8 @@ pub struct AudioReport {
     pub codec: Option<String>,
     pub microphone_verified: bool,
     pub playback_verified: bool,
+    pub playback_started: bool,
+    pub user_heard_tone: Option<bool>,
     pub publisher_transports: Vec<TransportReport>,
     pub viewer_transports: Vec<TransportReport>,
 }
@@ -71,6 +74,69 @@ impl Drop for MicrophoneGuard {
     }
 }
 
+/// Hardware boundary for deterministic speaker lifecycle checks without devices.
+trait SpeakerDevice {
+    fn disable_recording(&self);
+    fn acquire(&self) -> bool;
+    fn start_playout(&self) -> bool;
+    fn stop_playout(&self);
+    fn release(&self);
+}
+struct NativeSpeakerDevice(Arc<LkRuntime>);
+impl SpeakerDevice for NativeSpeakerDevice {
+    fn disable_recording(&self) {
+        let factory = self.0.pc_factory();
+        factory.set_adm_recording_enabled(false);
+        let _ = factory.stop_recording();
+    }
+    fn acquire(&self) -> bool {
+        self.0.pc_factory().acquire_platform_adm()
+    }
+    fn start_playout(&self) -> bool {
+        let factory = self.0.pc_factory();
+        factory.set_adm_playout_enabled(true);
+        (factory.playout_is_initialized() || factory.init_playout()) && factory.start_playout()
+    }
+    fn stop_playout(&self) {
+        let factory = self.0.pc_factory();
+        let _ = factory.stop_playout();
+        factory.set_adm_playout_enabled(false);
+    }
+    fn release(&self) {
+        self.0.pc_factory().release_platform_adm();
+    }
+}
+/// Does not use PlatformAudio::new(), which would enable microphone recording.
+struct SpeakerGuard<D: SpeakerDevice = NativeSpeakerDevice> {
+    device: D,
+}
+impl SpeakerGuard {
+    fn start() -> Result<Self, MediaError> {
+        Self::start_on(NativeSpeakerDevice(LkRuntime::instance()))
+    }
+}
+impl<D: SpeakerDevice> SpeakerGuard<D> {
+    fn start_on(device: D) -> Result<Self, MediaError> {
+        device.disable_recording();
+        if !device.acquire() {
+            return Err(MediaError::Capture);
+        }
+        let guard = Self { device };
+        guard.device.disable_recording();
+        if !guard.device.start_playout() {
+            return Err(MediaError::Capture);
+        }
+        Ok(guard)
+    }
+}
+impl<D: SpeakerDevice> Drop for SpeakerGuard<D> {
+    fn drop(&mut self) {
+        self.device.stop_playout();
+        self.device.disable_recording();
+        self.device.release();
+    }
+}
+
 pub async fn run_audio_probe(
     url: &str,
     publisher_token: &str,
@@ -84,6 +150,7 @@ pub async fn run_audio_probe(
     }
     if duration.is_zero()
         || duration > Duration::from_secs(30)
+        || (matches!(input, AudioInput::SpeakerTest) && duration > Duration::from_secs(3))
         || publisher_token.trim().is_empty()
         || viewer_token.trim().is_empty()
     {
@@ -123,8 +190,14 @@ async fn pipeline(
     let capture_deadline =
         matches!(input, AudioInput::Microphone).then(|| Instant::now() + duration);
     let mut device = None;
+    let mut speakers = None;
     let generated = match input {
-        AudioInput::Generated => Some(NativeAudioSource::new(Default::default(), 48000, 1, 100)),
+        AudioInput::Generated | AudioInput::SpeakerTest => {
+            if matches!(input, AudioInput::SpeakerTest) {
+                speakers = Some(start_if_active(cancelled, SpeakerGuard::start)?);
+            }
+            Some(NativeAudioSource::new(Default::default(), 48000, 1, 100))
+        }
         AudioInput::Microphone => {
             device = Some(start_if_active(cancelled, MicrophoneGuard::start)?);
             None
@@ -153,19 +226,19 @@ async fn pipeline(
     }}
    })=>result.map_err(|_|MediaError::Subscribe)??,
   };
-  // All remote playback was disabled before publishing the physical microphone.
+  // Microphone mode has playback off; SpeakerTest supplies generated PCM only.
   let mut stream=NativeAudioStream::new(remote.rtc_track(),48000,1);
   let started=Instant::now();
   let mut ticks=interval(Duration::from_millis(20));
   ticks.set_missed_tick_behavior(MissedTickBehavior::Skip);
   let mut sample_offset=0u64;
-  let mut report=AudioReport {audio_source:input,decoded_frames:0,decoded_samples:0,non_silent_frames:0,peak_sample:0,duration_ms:0,codec:None,microphone_verified:false,playback_verified:false,publisher_transports:Vec::new(),viewer_transports:Vec::new()};
+  let mut report=AudioReport {audio_source:input,decoded_frames:0,decoded_samples:0,non_silent_frames:0,peak_sample:0,duration_ms:0,codec:None,microphone_verified:false,playback_verified:false,playback_started:speakers.is_some(),user_heard_tone:None,publisher_transports:Vec::new(),viewer_transports:Vec::new()};
   let measured=async {
    loop {tokio::select! {
     _=sleep_until(capture_deadline.unwrap_or(started+duration))=>break,
     _=wait_cancelled(cancelled)=>return Err(MediaError::Cancelled),
     _=ticks.tick(), if generated.is_some()=>{
-     let samples:Vec<i16>=(0..960).map(|offset|(8000.0*(std::f64::consts::TAU*440.0*(sample_offset+offset) as f64/48000.0).sin()) as i16).collect();
+     let samples:Vec<i16>=(0..960).map(|offset|((if matches!(input,AudioInput::SpeakerTest){1200.0}else{8000.0})*(std::f64::consts::TAU*440.0*(sample_offset+offset) as f64/48000.0).sin()) as i16).collect();
      sample_offset+=960;
      let frame=AudioFrame {data:samples.into(),sample_rate:48000,num_channels:1,samples_per_channel:960};
      timeout(Duration::from_millis(500),generated.as_ref().unwrap().capture_frame(&frame)).await.map_err(|_|MediaError::Publish)?.map_err(|_|MediaError::Publish)?;
@@ -190,6 +263,7 @@ async fn pipeline(
   stream.close();
   // End physical recording before stats, unpublish, and room-close waits.
   drop(device.take());
+  drop(speakers.take());
   measured?;
   report.duration_ms=started.elapsed().as_millis() as u64;
   if report.decoded_frames==0 {return Err(MediaError::NoFrames);}
@@ -203,6 +277,7 @@ async fn pipeline(
   Ok(report)
  }.await;
     drop(device.take());
+    drop(speakers.take());
     let unpublished = timeout(
         Duration::from_secs(5),
         publisher
@@ -273,5 +348,113 @@ mod tests {
         });
         assert!(matches!(result, Err(MediaError::Cancelled)));
         assert!(stopped.load(Ordering::Acquire));
+    }
+}
+
+impl AudioReport {
+    /// Call only for the user's explicit response to a completed speaker test.
+    pub fn confirm_playback(&mut self, heard: bool) -> Result<(), MediaError> {
+        if !matches!(self.audio_source, AudioInput::SpeakerTest)
+            || !self.playback_started
+            || self.decoded_frames == 0
+            || self.non_silent_frames == 0
+        {
+            return Err(MediaError::InvalidInput);
+        }
+        self.user_heard_tone = Some(heard);
+        self.playback_verified = heard;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod speaker_device_tests {
+    use super::*;
+    use std::{cell::RefCell, rc::Rc};
+    struct Device {
+        events: Rc<RefCell<Vec<&'static str>>>,
+        acquire: bool,
+        start: bool,
+    }
+    impl SpeakerDevice for Device {
+        fn disable_recording(&self) {
+            self.events.borrow_mut().push("recording_off");
+        }
+        fn acquire(&self) -> bool {
+            assert_eq!(
+                self.events.borrow().last(),
+                Some(&"recording_off"),
+                "microphone must be disabled before acquiring hardware"
+            );
+            self.events.borrow_mut().push("acquire");
+            self.acquire
+        }
+        fn start_playout(&self) -> bool {
+            assert_eq!(self.events.borrow().last(), Some(&"recording_off"));
+            self.events.borrow_mut().push("start");
+            self.start
+        }
+        fn stop_playout(&self) {
+            self.events.borrow_mut().push("stop");
+        }
+        fn release(&self) {
+            self.events.borrow_mut().push("release");
+        }
+    }
+    #[test]
+    fn speaker_start_and_drop_keep_recording_disabled() {
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let guard = SpeakerGuard::start_on(Device {
+            events: events.clone(),
+            acquire: true,
+            start: true,
+        })
+        .unwrap_or_else(|_| panic!("expected speaker guard"));
+        drop(guard);
+        assert_eq!(
+            *events.borrow(),
+            [
+                "recording_off",
+                "acquire",
+                "recording_off",
+                "start",
+                "stop",
+                "recording_off",
+                "release"
+            ]
+        );
+    }
+    #[test]
+    fn failed_speaker_start_releases_acquired_hardware() {
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let result = SpeakerGuard::start_on(Device {
+            events: events.clone(),
+            acquire: true,
+            start: false,
+        });
+        assert!(matches!(result, Err(MediaError::Capture)));
+        assert_eq!(
+            *events.borrow(),
+            [
+                "recording_off",
+                "acquire",
+                "recording_off",
+                "start",
+                "stop",
+                "recording_off",
+                "release"
+            ]
+        );
+    }
+    #[test]
+    fn failed_acquisition_does_not_release_unowned_hardware() {
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let result = SpeakerGuard::start_on(Device {
+            events: events.clone(),
+            acquire: false,
+            start: true,
+        });
+        assert!(matches!(result, Err(MediaError::Capture)));
+        assert_eq!(*events.borrow(), ["recording_off", "acquire"]);
     }
 }

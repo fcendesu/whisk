@@ -238,8 +238,8 @@ Window capture, H.264 publish/decode, GPUI CPU preparation, physical microphone
 publish/decode, generated audio continuity during video switching, UDP TURN and
 controlled network failures have measured evidence below. M0 is incomplete:
 
-- Physical speaker playback and microphone continuity with actual video focus
-  switching still need device evidence; Audio Lab deliberately disables speakers.
+- Microphone continuity with actual video focus switching still needs device
+  evidence. Separate microphone and user-confirmed speaker paths now work.
 - Permission revocation, device removal/recovery and signing persistence remain
   unverified. The unchanged screen bundle now works after an app-scoped reset.
 - Sustained actual-capture-to-GPUI behavior at higher profiles is not certified.
@@ -439,7 +439,7 @@ preparation sample. It is a rendering/export check, not a sustained FPS result.
 A review caught a shutdown race in an initial automatic-on-quit export; that
 promise was removed in favor of the explicit save acknowledgement.
 
-Current verification: 37 deterministic Rust tests, four Python tests and fifteen
+Current verification: 44 deterministic Rust tests, four Python tests and fifteen
 explicit local-SFU tests pass, plus formatting/clippy/shell checks. Remote CI has
 not been run. Screen-capture access/live preview and physical microphone
 publish/decode have been exercised. Full M0 is incomplete as described above.
@@ -588,3 +588,46 @@ file hashes differ because packaging re-signs the executable. Signature
 verification passed. On the following reopen,
 macOS displayed a force-quit/window-recovery prompt; a fresh window opened in
 the microphone-off state. The prompt alone does not establish a crash cause.
+
+
+## Speaker playback verified — 2026-10-25
+
+```sh
+./scripts/run-audio-lab.sh --speaker
+# Quit before reusing the same signed bundle and refreshing fixture credentials:
+./scripts/run-audio-lab.sh --speaker --reuse-build
+```
+
+Whisk Speaker Lab is a separate binary/bundle (`dev.whisk.speaker-lab`), selected
+at compile time rather than by a runtime environment flag. Packaging it does
+not modify the previously granted microphone or screen-capture apps. It has no
+microphone purpose string and does not construct `PlatformAudio`, whose default
+constructor enables microphone recording. Its speaker-only guard disables
+recording before and after platform ADM acquisition, supplies generated PCM,
+and stops/releases output before network cleanup. Three device-boundary tests
+verify recording-disable order and success/failure resource ownership without
+opening real devices. Cancellation uses the existing checked source boundary.
+
+**Play quiet 3-second tone** sends a 440 Hz, low-level generated signal through
+the private local SFU room to the system output. The lab opens idle, never starts
+playback automatically, and leaves system volume unchanged. Requests longer
+than three seconds are rejected before device access. Native output buffering
+and synchronous device stop time are not hard realtime guarantees.
+
+Playback initially remains unverified even when native playout starts and Opus
+frames decode. The user must choose **I heard the tone** or **No sound** after
+the test. Unknown, no-sound and heard results remain distinct. Confirmation is
+written off the UI thread, and the UI acknowledges the actual file write.
+
+The [confirmed physical speaker record](results/2026-10-25-macos-arm64-speaker-loopback.json)
+contains 300 decoded frames / 144,000 samples, 296 non-silent frames, peak sample
+1,339, `audio/opus` and active UDP on both legs. The decoded observation plus
+native stop took 3,035 ms. The user confirmed hearing the tone in the app and in
+chat; the saved report has `playback_started`, `user_heard_tone` and
+`playback_verified` true, while `microphone_verified` stays false. This is a short
+physical playback proof, not audio-quality or full M0 certification.
+
+Current checks: 44 deterministic Rust, 15 explicit local-SFU and four Python
+tests pass, with fmt/clippy/shell/diff checks and speaker-bundle signature
+verification. Independent review found no actionable issues. Full SHA256
+manifests confirm the existing Media Lab and Audio Lab bundles are unchanged.
