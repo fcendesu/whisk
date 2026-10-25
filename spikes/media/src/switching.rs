@@ -71,12 +71,43 @@ pub async fn run_switch_probe(
 /// Success does not certify capability; product profile selection still uses select_codec.
 pub async fn run_profile_probe(
     url: &str,
+    first: &str,
+    second: &str,
+    viewer: &str,
+    phase: Duration,
+    profile: VideoProfile,
+) -> Result<SwitchingReport, MediaError> {
+    run_profile_internal(url, first, second, viewer, phase, profile, None).await
+}
+
+/// Feed the same bounded GPUI bridge used by the native capture preview.
+pub async fn run_profile_preview(
+    url: &str,
+    first: &str,
+    second: &str,
+    viewer: &str,
+    phase: Duration,
+    profile: VideoProfile,
+    target: crate::loopback::PreviewTarget,
+) -> Result<SwitchingReport, MediaError> {
+    run_profile_internal(url, first, second, viewer, phase, profile, Some(target)).await
+}
+
+async fn run_profile_internal(
+    url: &str,
     first_token: &str,
     second_token: &str,
     viewer_token: &str,
     phase: Duration,
     profile: VideoProfile,
+    target: Option<crate::loopback::PreviewTarget>,
 ) -> Result<SwitchingReport, MediaError> {
+    if target
+        .as_ref()
+        .is_some_and(crate::loopback::PreviewTarget::cancelled)
+    {
+        return Err(MediaError::Cancelled);
+    }
     if phase.is_zero()
         || phase > Duration::from_secs(300)
         || [first_token, second_token, viewer_token]
@@ -85,25 +116,26 @@ pub async fn run_profile_probe(
     {
         return Err(MediaError::InvalidInput);
     }
-    let first = connect_probe(url, first_token)
-        .await
-        .map_err(|_| MediaError::Connect)?;
-    let second = match connect_probe(url, second_token).await {
+    let first = connect_preview_room(url, first_token, target.as_ref()).await?;
+    let second = match connect_preview_room(url, second_token, target.as_ref()).await {
         Ok(room) => room,
-        Err(_) => {
+        Err(error) => {
             let _ = first.close().await;
-            return Err(MediaError::Connect);
+            return Err(error);
         }
     };
-    let mut viewer = match connect_probe(url, viewer_token).await {
+    let mut viewer = match connect_preview_room(url, viewer_token, target.as_ref()).await {
         Ok(room) => room,
-        Err(_) => {
+        Err(error) => {
             let _ = first.close().await;
             let _ = second.close().await;
-            return Err(MediaError::Connect);
+            return Err(error);
         }
     };
-    let result = probe([&first, &second], &mut viewer, phase, profile).await;
+    let result = tokio::select! {
+        result=probe([&first, &second], &mut viewer, phase, profile,target.as_ref())=>result,
+        _=crate::loopback::wait_cancelled(target.as_ref())=>Err(MediaError::Cancelled),
+    };
     let first_closed = first.close().await;
     let second_closed = second.close().await;
     let viewer_closed = viewer.close().await;
@@ -114,11 +146,23 @@ pub async fn run_profile_probe(
     Ok(report)
 }
 
+async fn connect_preview_room(
+    url: &str,
+    token: &str,
+    target: Option<&crate::loopback::PreviewTarget>,
+) -> Result<ProbeRoom, MediaError> {
+    tokio::select! {
+        result=connect_probe(url,token)=>result.map_err(|_|MediaError::Connect),
+        _=crate::loopback::wait_cancelled(target)=>Err(MediaError::Cancelled),
+    }
+}
+
 async fn probe(
     publishers: [&ProbeRoom; 2],
     viewer: &mut ProbeRoom,
     phase: Duration,
     profile: VideoProfile,
+    target: Option<&crate::loopback::PreviewTarget>,
 ) -> Result<SwitchingReport, MediaError> {
     let (width, height, fps, bitrate) = match profile {
         VideoProfile::P720F30 => (1280, 720, 30, 2_000_000),
@@ -235,6 +279,7 @@ async fn probe(
                             None => { report.invalid_timestamps += 1; }
                         }
                         report.received_frames[focus]+=1;
+                        if let Some(target)=target {target.frames.send(crate::capture::FrameEvent::Frame(std::sync::Arc::new(frame)));}
                     }
                 }
             }

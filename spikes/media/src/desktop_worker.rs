@@ -121,15 +121,26 @@ impl Worker {
                                 let result = match runtime {
                                     Ok(runtime) => runtime.block_on(async {
                                         let target = media_spike::loopback::PreviewTarget { frames, generation, session:id };
+                                        if input.is_none() && let Ok(name)=std::env::var("WHISK_MEDIA_PROFILE") {
+                                            let profile=match name.as_str(){
+                                                "720p30"=>media_spike::codec::VideoProfile::P720F30,
+                                                "1080p60"=>media_spike::codec::VideoProfile::P1080F60,
+                                                "1440p60"=>media_spike::codec::VideoProfile::P1440F60,
+                                                _=>return Err(media_spike::loopback::MediaError::InvalidInput),
+                                            };
+                                            let second=std::env::var("LIVEKIT_SECOND_PUBLISH_TOKEN").map_err(|_|media_spike::loopback::MediaError::InvalidInput)?;
+                                            let phase=std::env::var("WHISK_MEDIA_PHASE_SECONDS").unwrap_or_else(|_|"15".into()).parse::<u64>().map_err(|_|media_spike::loopback::MediaError::InvalidInput)?;
+                                            let report=media_spike::switching::run_profile_preview(&url,&publisher,&second,&viewer,Duration::from_secs(phase),profile,target).await?;
+                                            save_report(&report);
+                                            return Ok(format!("Experimental {name} complete: {} / {} decoded frames across two focus phases. Generated audio continuity: {}. Not quality certified.",report.received_frames[0],report.received_frames[1],report.audio_verified));
+                                        }
                                         let report = match input {
                                             Some(input) => media_spike::loopback::run_capture_preview(&url, &publisher, &viewer, Duration::from_secs(30), input, target).await,
                                             None => media_spike::loopback::run_loopback_preview(&url, &publisher, &viewer, Duration::from_secs(30), target).await,
                                         }?;
-                                        // Evidence contains counters/backend names only, never source labels or tokens.
-                                        if let Ok(path) = std::env::var("WHISK_MEDIA_REPORT_PATH")
-                                            && let Ok(json) = serde_json::to_vec_pretty(&report) { let _ = std::fs::write(path, json); }
-                                        Ok::<_, media_spike::loopback::MediaError>(report)
-                                    }).map(|report| format!("{} complete: {} decoded frames · {} · encoder {} / decoder {}. Publishing stopped.", if captured { "Selected-window test" } else { "Generated-video test" }, report.decoded_frames, report.codec.as_deref().unwrap_or("unknown codec"), report.encoder.as_deref().unwrap_or("unknown"), report.decoder.as_deref().unwrap_or("unknown"))).map_err(|error| format!("Network test stopped: {error}. Relaunch the lab to refresh its short-lived test credentials.")),
+                                        save_report(&report);
+                                        Ok::<_, media_spike::loopback::MediaError>(format!("{} complete: {} decoded frames · {} · encoder {} / decoder {}. Publishing stopped.", if captured { "Selected-window test" } else { "Generated-video test" }, report.decoded_frames, report.codec.as_deref().unwrap_or("unknown codec"), report.encoder.as_deref().unwrap_or("unknown"), report.decoder.as_deref().unwrap_or("unknown")))
+                                    }).map_err(|error| format!("Network test stopped: {error}. Relaunch the lab to refresh its short-lived test credentials.")),
                                     Err(_) => Err("Unable to start the native media runtime.".into()),
                                 };
                                 let message = match result { Ok(message) | Err(message) => message };
@@ -165,5 +176,14 @@ impl Worker {
 impl Drop for Worker {
     fn drop(&mut self) {
         self.generation.fetch_add(1, Ordering::AcqRel);
+    }
+}
+
+// Counter/backend evidence only: no source labels, pixels, endpoint or tokens.
+fn save_report(report: &impl serde::Serialize) {
+    if let Ok(path) = std::env::var("WHISK_MEDIA_REPORT_PATH")
+        && let Ok(json) = serde_json::to_vec_pretty(report)
+    {
+        let _ = std::fs::write(path, json);
     }
 }

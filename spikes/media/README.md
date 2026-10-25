@@ -439,7 +439,7 @@ preparation sample. It is a rendering/export check, not a sustained FPS result.
 A review caught a shutdown race in an initial automatic-on-quit export; that
 promise was removed in favor of the explicit save acknowledgement.
 
-Current verification: 44 deterministic Rust tests, four Python tests and fifteen
+Current verification: 45 deterministic Rust tests, four Python tests and seventeen
 explicit local-SFU tests pass, plus formatting/clippy/shell checks. Remote CI has
 not been run. Screen-capture access/live preview and physical microphone
 publish/decode have been exercised. Full M0 is incomplete as described above.
@@ -631,3 +631,62 @@ Current checks: 44 deterministic Rust, 15 explicit local-SFU and four Python
 tests pass, with fmt/clippy/shell/diff checks and speaker-bundle signature
 verification. Independent review found no actionable issues. Full SHA256
 manifests confirm the existing Media Lab and Audio Lab bundles are unchanged.
+
+
+## Experimental high-profile GPUI comparison — 2026-10-25
+
+```sh
+WHISK_MEDIA_REPORT_PATH="$PWD/target/profile-native.json" \
+  ./scripts/run-profile-lab.sh 1080p60 15
+# After quitting, reuse the same Network Lab build with fresh private-room tokens:
+./scripts/run-profile-lab.sh 1080p60 15 --reuse-build
+```
+
+The runner supports 720p30/1080p60/1440p60 experimental targets and 1–300 seconds
+per focus phase. It rebuilds Network Lab only, uses two distinct publishers and
+one viewer in a unique local room, and switches focused generated video while
+generated audio continues. It does not capture a screen or open physical audio
+devices. Normal captured-window publishing remains on its existing 720p30 path.
+No profile is added to the release-certified capability list.
+
+The existing profile probe now forwards decoded BGRA frames into the bounded
+watch/GPUI bridge. Pre-cancelled previews never connect; active cancellation stops
+the probe/audio generator and closes its three owned rooms. A live regression
+observes both orange and blue focused publishers at 1920×1080. Another active-stop
+regression fails when the cancellation branch is deliberately disabled.
+
+A 33 ms UI poll imposed an artificial preparation limit. The rebuilt Network Lab
+polls at 8 ms, notifying/rendering only when state changes. The [comparison record](results/2026-10-25-macos-arm64-profile-ui-comparison.json)
+links these same-machine development observations on macOS 27.0.1 / Apple M4:
+
+| Measurement | 33 ms polling | 8 ms polling |
+|---|---:|---:|
+| UI-prepared frames | 814 | 1,711 |
+| UI observation window | 31,664 ms | 31,745 ms |
+| CPU preparation FPS | 25.71 | 53.90 |
+| p95 CPU image preparation | 1,522 µs | 1,272 µs |
+| Maximum bridge queue depth | 2 | 2 |
+| Native decode FPS, phases A/B | 57.80 / 53.45 | 57.13 / 60.00 |
+| Maximum generated-audio receive gap | 111 ms | 245 ms |
+
+Both phases received 1920×1080 with VideoToolbox encoder/decoder. Both generated
+audio checks passed, but the 245 ms gap is close to the 250 ms test threshold.
+The foreground/workload conditions were not controlled. CPU preparation includes
+startup and differs from view-tree builds and GPU/display presentation. These
+30-second generated-video records are not sustained actual-capture proof or a
+60 FPS release certification. The UI visibly rendered orange then blue and
+acknowledged saving its metrics. Existing Media, Audio and Speaker bundle hashes
+are unchanged; only Network Lab was rebuilt.
+
+Raw records: [33 ms native](results/2026-10-25-macos-arm64-1080-ui-33ms-native.json),
+[33 ms preparation](results/2026-10-25-macos-arm64-1080-ui-33ms-preparation.json),
+[8 ms native](results/2026-10-25-macos-arm64-1080-ui-8ms-native.json),
+[8 ms preparation](results/2026-10-25-macos-arm64-1080-ui-8ms-preparation.json).
+
+Verification: 45 deterministic Rust, 17 live-SFU and four Python tests pass,
+with fmt/clippy/shell/diff checks. Independent scoped review found no issues.
+One earlier full live run failed `required_relay_carries_h264_on_both_publisher_and_viewer_paths`
+with a connection timeout. The isolated test, its full seven-test group, and a
+fresh complete live run then passed without deadline changes/retries in the
+runner. The timeout cause was not reproduced; the failed log is retained in the
+execution ledger directory. This remains an observed fixture/network limitation.

@@ -1,0 +1,78 @@
+{
+  "os": "macOS 27.0.1",
+  "cpu": "Apple M4",
+  "arch": "arm64",
+  "workload": "two generated 1920x1080 H264 publishers, focused GPUI viewer, generated 440Hz audio",
+  "phase_seconds": 15,
+  "build": "development unoptimized Rust; pinned native SDK components",
+  "load_controlled": false,
+  "gpu_presented_frames": null,
+  "capture_source": "generated only; no screen or microphone capture",
+  "quality_certified": false,
+  "comparison": [
+    {
+      "poll_interval_ms": 33,
+      "ui_prepared_frames": 814,
+      "ui_window_ms": 31664,
+      "ui_preparation_fps": 25.70742799393633,
+      "ui_preparation_p95_us": 1522,
+      "max_queue_depth": 2,
+      "native_decode_fps": [
+        57.8,
+        53.448850383205595
+      ],
+      "native_received_size": [
+        [
+          1920,
+          1080
+        ],
+        [
+          1920,
+          1080
+        ]
+      ],
+      "audio_verified": true,
+      "max_audio_gap_ms": 111,
+      "encoder": [
+        "VideoToolbox",
+        "VideoToolbox"
+      ],
+      "decoder": [
+        "VideoToolbox",
+        "VideoToolbox"
+      ]
+    },
+    {
+      "poll_interval_ms": 8,
+      "ui_prepared_frames": 1711,
+      "ui_window_ms": 31745,
+      "ui_preparation_fps": 53.89825169318003,
+      "ui_preparation_p95_us": 1272,
+      "max_queue_depth": 2,
+      "native_decode_fps": [
+        57.12952469835344,
+        59.99600026664889
+      ],
+      "native_received_size": [
+        [
+          1920,
+          1080
+        ],
+        [
+          1920,
+          1080
+        ]
+      ],
+      "audio_verified": true,
+      "max_audio_gap_ms": 245,
+      "encoder": [
+        "VideoToolbox",
+        "VideoToolbox"
+      ],
+      "decoder": [
+        "VideoToolbox",
+        "VideoToolbox"
+      ]
+    }
+  ]
+}

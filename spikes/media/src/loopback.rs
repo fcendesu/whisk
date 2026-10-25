@@ -357,11 +357,11 @@ pub async fn run_loopback_preview(
 }
 
 impl PreviewTarget {
-    fn cancelled(&self) -> bool {
+    pub(crate) fn cancelled(&self) -> bool {
         self.generation.load(std::sync::atomic::Ordering::Acquire) != self.session
     }
 }
-async fn wait_cancelled(target: Option<&PreviewTarget>) {
+pub(crate) async fn wait_cancelled(target: Option<&PreviewTarget>) {
     match target {
         None => std::future::pending::<()>().await,
         Some(target) => loop {

@@ -28,7 +28,8 @@ impl MediaLab {
     fn new(cx: &mut Context<Self>) -> Self {
         cx.spawn(async move |this, cx| {
             loop {
-                Timer::after(Duration::from_millis(33)).await;
+                // Poll often enough for 60 FPS sources; notify/render only on real changes.
+                Timer::after(Duration::from_millis(8)).await;
                 if this.update(cx, |view, cx| view.poll(cx)).is_err() {
                     break;
                 }
@@ -104,11 +105,21 @@ impl MediaLab {
                         Instant::now(),
                         media_spike::ui_metrics::UiFrameMetrics::new(if captured {
                             "captured_network"
+                        } else if std::env::var_os("WHISK_MEDIA_PROFILE").is_some() {
+                            "generated_profile_network"
                         } else {
                             "generated_network"
                         }),
                     ));
-                    self.status = if captured { "Publishing selected window → H.264 → configured SFU → native decode → GPUI. Stops after 30 seconds." } else { "Native H.264 → configured SFU → native decode → GPUI. Sending a generated pattern only; this test lasts 30 seconds." }.into();
+                    self.status = if captured {
+                        "Publishing selected window → H.264 → configured SFU → native decode → GPUI. Stops after 30 seconds.".into()
+                    } else if let Ok(profile) = std::env::var("WHISK_MEDIA_PROFILE") {
+                        format!(
+                            "Experimental {profile} target · two generated publishers · automatic focus switch · generated audio counters only · not certified."
+                        )
+                    } else {
+                        "Native H.264 → configured SFU → native decode → GPUI. Sending a generated pattern only; this test lasts 30 seconds.".into()
+                    };
                 }
                 Event::NetworkFinished(id, result) if id == generation => {
                     self.finish_metrics();
