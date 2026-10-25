@@ -577,3 +577,12 @@ fmt/clippy/shell/diff checks and Audio Lab signature verification pass. Existing
 upstream future-compatibility notices remain. All four screen-bundle files still
 match their previously recorded SHA256 hashes. Physical speaker playback and the
 remaining M0 gates above are still open.
+
+
+A [repeat physical-device run](results/2026-10-25-macos-arm64-microphone-loopback-repeat.json)
+completed after the repaired Audio Lab binary was built: 797 decoded frames,
+382,560 samples, 107 frames above threshold, peak 12,394, and an 8,013 ms decoded
+observation window. Microphone verification is true; playback verification is
+false. The bundled executable matches the latest build. On the following reopen,
+macOS displayed a force-quit/window-recovery prompt; a fresh window opened in
+the microphone-off state. The prompt alone does not establish a crash cause.

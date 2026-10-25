@@ -1,0 +1,35 @@
+{
+  "audio_source": "microphone",
+  "decoded_frames": 797,
+  "decoded_samples": 382560,
+  "non_silent_frames": 107,
+  "peak_sample": 12394,
+  "duration_ms": 8013,
+  "codec": "audio/opus",
+  "microphone_verified": true,
+  "playback_verified": false,
+  "publisher_transports": [
+    {
+      "protocol": "udp",
+      "local_candidate_type": "host",
+      "remote_candidate_type": "prflx",
+      "state": "succeeded",
+      "nominated": true,
+      "rtt_ms": 1.0,
+      "bytes_sent": 66147,
+      "bytes_received": 659
+    }
+  ],
+  "viewer_transports": [
+    {
+      "protocol": "udp",
+      "local_candidate_type": "host",
+      "remote_candidate_type": "prflx",
+      "state": "succeeded",
+      "nominated": true,
+      "rtt_ms": 1.0,
+      "bytes_sent": 92,
+      "bytes_received": 63675
+    }
+  ]
+}
