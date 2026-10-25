@@ -583,6 +583,8 @@ A [repeat physical-device run](results/2026-10-25-macos-arm64-microphone-loopbac
 completed after the repaired Audio Lab binary was built: 797 decoded frames,
 382,560 samples, 107 frames above threshold, peak 12,394, and an 8,013 ms decoded
 observation window. Microphone verification is true; playback verification is
-false. The bundled executable matches the latest build. On the following reopen,
+false. The bundled executable and latest build have the same Mach-O UUID; their raw
+file hashes differ because packaging re-signs the executable. Signature
+verification passed. On the following reopen,
 macOS displayed a force-quit/window-recovery prompt; a fresh window opened in
 the microphone-off state. The prompt alone does not establish a crash cause.
