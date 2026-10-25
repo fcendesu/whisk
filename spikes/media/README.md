@@ -478,3 +478,39 @@ The current Media Lab bundle remains unchanged. Screen-recording settings show
 the correct app enabled, but its preflight still reports denial after a Finder
 restart. Captured-window UI measurements remain pending resolution of that
 permission mismatch. M0 remains incomplete.
+
+
+## Reusing a granted bundle and measuring the native UI
+
+Quit the lab, then run:
+
+```sh
+./scripts/run-media-lab.sh --capture-network --reuse-build
+```
+
+`--reuse-build` skips compilation, bundle copying, plist changes and signing.
+It fails clearly if the chosen Media Lab or Network Lab bundle does not exist.
+Use `--network --reuse-build` for the separately identified Network Lab. Omit the
+flag when intentionally rebuilding. Reuse runs the existing binary, so it does
+not include later Rust changes until a rebuild. It preserves bundle identity;
+it cannot repair a stale macOS permission grant.
+
+The launcher now registers network runs through LaunchServices with fresh
+short-lived local-fixture credentials. Direct executable launch previously left
+an unregistered instance, and UI tooling could open a second instance without
+those credentials. These are disposable local fixture tokens derived from the
+public development secret; they are never printed. The launcher waits until
+the app closes. Quit an existing instance before relaunching for fresh tokens.
+
+The [30-second generated-network report](results/2026-10-25-macos-arm64-network-ui-loopback.json)
+records 895 submitted/decoded 1280×720 H.264 frames with VideoToolbox encoding
+and decoding. The [corresponding GPUI preparation report](results/2026-10-25-macos-arm64-network-ui-metrics.json)
+records 849 CPU-prepared frames over 30,790 ms, approximately 27.57 preparation
+FPS, a maximum queue depth of two, 3,129,753,600 copied BGRA bytes, and 1,056 µs
+p95 CPU image-preparation time. Decode and UI preparation are different counters;
+these numbers do not measure GPU presentation or screen-capture drops. The UI
+visibly rendered the generated orange frame and acknowledged saving metrics.
+
+All four files inside the frozen Media Lab bundle had identical SHA256 hashes
+before and after the reuse run, and signature verification passed. Its refreshed
+capture preflight still reported denial; no privacy settings were changed.

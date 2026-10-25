@@ -1,0 +1,41 @@
+{
+  "submitted_frames": 895,
+  "decoded_frames": 895,
+  "received_width": 1280,
+  "received_height": 720,
+  "last_pixel_bgra": [
+    40,
+    141,
+    229,
+    255
+  ],
+  "codec": "video/H264",
+  "encoder": "VideoToolbox",
+  "decoder": "VideoToolbox",
+  "duration_ms": 30001,
+  "high_quality_certified": false,
+  "publisher_transports": [
+    {
+      "protocol": "udp",
+      "local_candidate_type": "prflx",
+      "remote_candidate_type": "host",
+      "state": "succeeded",
+      "nominated": true,
+      "rtt_ms": 1.0,
+      "bytes_sent": 388323,
+      "bytes_received": 1330
+    }
+  ],
+  "viewer_transports": [
+    {
+      "protocol": "udp",
+      "local_candidate_type": "prflx",
+      "remote_candidate_type": "host",
+      "state": "succeeded",
+      "nominated": true,
+      "rtt_ms": 1.0,
+      "bytes_sent": 9116,
+      "bytes_received": 191661
+    }
+  ]
+}

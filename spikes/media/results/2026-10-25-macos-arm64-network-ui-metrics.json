@@ -1,0 +1,12 @@
+{
+  "mode": "generated_network",
+  "window_ms": 30790,
+  "cpu_prepared_frames": 849,
+  "ui_bgra_bytes_copied": 3129753600,
+  "max_queue_depth": 2,
+  "view_tree_builds": 850,
+  "image_preparation_p95_us": 1056,
+  "observed_preparation_fps": 27.57388762585255,
+  "gpu_presented_frames": null,
+  "quality_certified": false
+}
