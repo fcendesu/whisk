@@ -24,6 +24,11 @@ name = "whisk-speaker-spike"
 path = "src/speaker_desktop.rs"
 required-features = ["desktop"]
 
+[[bin]]
+name = "whisk-focus-spike"
+path = "src/focus_desktop.rs"
+required-features = ["desktop"]
+
 [dependencies]
 futures-util = "0.3"
 gpui = { version = "=0.2.2", optional = true, features = ["runtime_shaders"] }

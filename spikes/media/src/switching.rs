@@ -57,6 +57,8 @@ pub struct SwitchingReport {
     pub tone_frequency_hz: f64,
     pub microphone_verified: bool,
     pub audio_source: &'static str,
+    pub audio_continuity_basis: &'static str,
+    pub device_context: &'static str,
     pub quality_certified: bool,
     pub publisher_transports: [Vec<crate::transport::TransportReport>; 2],
     pub viewer_transports: [Vec<crate::transport::TransportReport>; 2],
@@ -90,7 +92,19 @@ pub async fn run_profile_probe(
     phase: Duration,
     profile: VideoProfile,
 ) -> Result<SwitchingReport, MediaError> {
-    run_profile_internal(url, first, second, viewer, phase, profile, None).await
+    run_profile_internal(
+        url,
+        first,
+        second,
+        viewer,
+        phase,
+        profile,
+        ProbeMode {
+            target: None,
+            physical: false,
+        },
+    )
+    .await
 }
 
 /// Feed the same bounded GPUI bridge used by the native capture preview.
@@ -103,7 +117,59 @@ pub async fn run_profile_preview(
     profile: VideoProfile,
     target: crate::loopback::PreviewTarget,
 ) -> Result<SwitchingReport, MediaError> {
-    run_profile_internal(url, first, second, viewer, phase, profile, Some(target)).await
+    run_profile_internal(
+        url,
+        first,
+        second,
+        viewer,
+        phase,
+        profile,
+        ProbeMode {
+            target: Some(target),
+            physical: false,
+        },
+    )
+    .await
+}
+
+/// Explicit user-started local fixture proof; generated video, physical default microphone.
+/// Capture has a 15-second budget including device/track setup; no speaker playback.
+pub async fn run_microphone_focus_preview(
+    url: &str,
+    first: &str,
+    second: &str,
+    viewer: &str,
+    target: crate::loopback::PreviewTarget,
+) -> Result<SwitchingReport, MediaError> {
+    if target.cancelled() {
+        return Err(MediaError::Cancelled);
+    }
+    if url::Url::parse(url).ok().is_none_or(|u| {
+        u.scheme() != "ws"
+            || u.host_str() != Some("127.0.0.1")
+            || u.username() != ""
+            || u.password().is_some()
+    }) {
+        return Err(MediaError::InvalidInput);
+    }
+    run_profile_internal(
+        url,
+        first,
+        second,
+        viewer,
+        Duration::from_secs(5),
+        VideoProfile::P720F30,
+        ProbeMode {
+            target: Some(target),
+            physical: true,
+        },
+    )
+    .await
+}
+
+struct ProbeMode {
+    target: Option<crate::loopback::PreviewTarget>,
+    physical: bool,
 }
 
 async fn run_profile_internal(
@@ -113,8 +179,9 @@ async fn run_profile_internal(
     viewer_token: &str,
     phase: Duration,
     profile: VideoProfile,
-    target: Option<crate::loopback::PreviewTarget>,
+    mode: ProbeMode,
 ) -> Result<SwitchingReport, MediaError> {
+    let ProbeMode { target, physical } = mode;
     if target
         .as_ref()
         .is_some_and(crate::loopback::PreviewTarget::cancelled)
@@ -146,7 +213,7 @@ async fn run_profile_internal(
         }
     };
     let result = tokio::select! {
-        result=probe([&first, &second], &mut viewer, phase, profile,target.as_ref())=>result,
+        result=probe([&first, &second], &mut viewer, phase, profile,target.as_ref(),physical)=>result,
         _=crate::loopback::wait_cancelled(target.as_ref())=>Err(MediaError::Cancelled),
     };
     let first_closed = first.close().await;
@@ -176,6 +243,7 @@ async fn probe(
     phase: Duration,
     profile: VideoProfile,
     target: Option<&crate::loopback::PreviewTarget>,
+    physical: bool,
 ) -> Result<SwitchingReport, MediaError> {
     let (width, height, fps, bitrate) = match profile {
         VideoProfile::P720F30 => (1280, 720, 30, 2_000_000),
@@ -213,54 +281,161 @@ async fn probe(
         .map_err(|_| MediaError::Publish)?;
         publications.push(publication);
     }
-    let audio_source = NativeAudioSource::new(AudioSourceOptions::default(), 48_000, 1, 100);
+    let capture_deadline = physical.then(|| Instant::now() + Duration::from_secs(15));
+    let mut microphone = if physical {
+        Some(start_if_current(
+            target,
+            crate::microphone::MicrophoneGuard::start,
+        )?)
+    } else {
+        None
+    };
+    let audio_source =
+        (!physical).then(|| NativeAudioSource::new(AudioSourceOptions::default(), 48_000, 1, 100));
     let audio_track = LocalAudioTrack::create_audio_track(
-        "whisk-generated-440hz-tone",
-        RtcAudioSource::Native(audio_source.clone()),
+        if physical {
+            "whisk-physical-microphone"
+        } else {
+            "whisk-generated-440hz-tone"
+        },
+        audio_source
+            .as_ref()
+            .map(|s| RtcAudioSource::Native(s.clone()))
+            .unwrap_or(RtcAudioSource::Device),
     );
-    let audio_publication = timeout(
-        Duration::from_secs(10),
-        publishers[0].sdk_room().local_participant().publish_track(
-            LocalTrack::Audio(audio_track),
-            TrackPublishOptions {
-                source: TrackSource::Microphone,
-                dtx: false,
-                ..Default::default()
-            },
-        ),
-    )
-    .await
-    .map_err(|_| MediaError::Publish)?
-    .map_err(|_| MediaError::Publish)?;
-    let result=async {
-        let mut remote:[Option<RemoteVideoTrack>;2]=[None,None];
+    let audio_publication = capture_before(capture_deadline, async {
+        timeout(
+            Duration::from_secs(10),
+            publishers[0].sdk_room().local_participant().publish_track(
+                LocalTrack::Audio(audio_track),
+                TrackPublishOptions {
+                    source: TrackSource::Microphone,
+                    dtx: false,
+                    ..Default::default()
+                },
+            ),
+        )
+        .await
+        .map_err(|_| MediaError::Publish)?
+        .map_err(|_| MediaError::Publish)
+    })
+    .await?;
+    let measurement = async {
+        let mut remote: [Option<RemoteVideoTrack>; 2] = [None, None];
         let mut remote_audio = None;
-        timeout(Duration::from_secs(10),async {
+        timeout(Duration::from_secs(10), async {
             while remote.iter().any(Option::is_none) || remote_audio.is_none() {
                 match viewer.next_event().await {
-                    Some(RoomEvent::TrackSubscribed {track:RemoteTrack::Video(track),publication,..})=>{
-                        if let Some(index)=publications.iter().position(|expected|expected.sid()==publication.sid()) { remote[index]=Some(track); }
+                    Some(RoomEvent::TrackSubscribed {
+                        track: RemoteTrack::Video(track),
+                        publication,
+                        ..
+                    }) => {
+                        if let Some(index) = publications
+                            .iter()
+                            .position(|expected| expected.sid() == publication.sid())
+                        {
+                            remote[index] = Some(track);
+                        }
                     }
-                    Some(RoomEvent::TrackSubscribed {track:RemoteTrack::Audio(track),publication,..}) if publication.sid() == audio_publication.sid() => { remote_audio = Some(track); }
-                    Some(_)=>{},
-                    None=>return Err(MediaError::Subscribe),
+                    Some(RoomEvent::TrackSubscribed {
+                        track: RemoteTrack::Audio(track),
+                        publication,
+                        ..
+                    }) if publication.sid() == audio_publication.sid() => {
+                        remote_audio = Some(track);
+                    }
+                    Some(_) => {}
+                    None => return Err(MediaError::Subscribe),
                 }
             }
             Ok(())
-        }).await.map_err(|_|MediaError::Subscribe)??;
-        let selected=[remote[0].take().ok_or(MediaError::Subscribe)?,remote[1].take().ok_or(MediaError::Subscribe)?];
-        let mut patterns=[[40,140,230,255],[230,120,40,255]].map(|color|VideoFrame {width,height,bgra:color.into_iter().cycle().take(width as usize * height as usize * 4).collect::<Vec<_>>().into()});
-        let mut report=SwitchingReport{submitted_frames:[0;2],received_size:[[0;2];2],requested_profile:profile,requested_fps:fps,frame_age_samples:0,invalid_timestamps:0,frame_age_p50_ms:None,frame_age_p95_ms:None,frame_age_max_ms:None,encoder:[None,None],decoder:[None,None],phase_duration_ms:[0;2],received_frames:[0;2],wrong_source_frames:0,duration_ms:0,audio_verified:false,audio_source_calls:0,audio_source_max_interval_ms:0,audio_source_max_wait_ms:0,audio_received_frames:[0;2],audio_receive_max_interval_ms:0,audio_observation_ms:0,audio_packets_received:None,audio_packets_lost:None,audio_jitter_ms:None,audio_concealed_samples:None,audio_rtp_stats_scope:"track_cumulative_after_observation",video_submit_max_us:0,video_frame_prepare_max_us:0,audible_audio_frames:[0;2],max_audio_gap_ms:0,tone_frequency_hz:0.0,microphone_verified:false,audio_source:"generated_440hz_pcm",quality_certified:false,publisher_transports:[Vec::new(),Vec::new()],viewer_transports:[Vec::new(),Vec::new()]};
+        })
+        .await
+        .map_err(|_| MediaError::Subscribe)??;
+        let selected = [
+            remote[0].take().ok_or(MediaError::Subscribe)?,
+            remote[1].take().ok_or(MediaError::Subscribe)?,
+        ];
+        let mut patterns = [[40, 140, 230, 255], [230, 120, 40, 255]].map(|color| VideoFrame {
+            width,
+            height,
+            bgra: color
+                .into_iter()
+                .cycle()
+                .take(width as usize * height as usize * 4)
+                .collect::<Vec<_>>()
+                .into(),
+        });
+        let mut report = SwitchingReport {
+            submitted_frames: [0; 2],
+            received_size: [[0; 2]; 2],
+            requested_profile: profile,
+            requested_fps: fps,
+            frame_age_samples: 0,
+            invalid_timestamps: 0,
+            frame_age_p50_ms: None,
+            frame_age_p95_ms: None,
+            frame_age_max_ms: None,
+            encoder: [None, None],
+            decoder: [None, None],
+            phase_duration_ms: [0; 2],
+            received_frames: [0; 2],
+            wrong_source_frames: 0,
+            duration_ms: 0,
+            audio_verified: false,
+            audio_source_calls: 0,
+            audio_source_max_interval_ms: 0,
+            audio_source_max_wait_ms: 0,
+            audio_received_frames: [0; 2],
+            audio_receive_max_interval_ms: 0,
+            audio_observation_ms: 0,
+            audio_packets_received: None,
+            audio_packets_lost: None,
+            audio_jitter_ms: None,
+            audio_concealed_samples: None,
+            audio_rtp_stats_scope: "track_cumulative_after_observation",
+            video_submit_max_us: 0,
+            video_frame_prepare_max_us: 0,
+            audible_audio_frames: [0; 2],
+            max_audio_gap_ms: 0,
+            tone_frequency_hz: 0.0,
+            microphone_verified: false,
+            audio_source: "generated_440hz_pcm",
+            audio_continuity_basis: if physical {
+                "decoded_microphone_pcm"
+            } else {
+                "audible_generated_pcm"
+            },
+            device_context: if physical {
+                "system_default_microphone_coreaudio"
+            } else {
+                "no_physical_device"
+            },
+            quality_certified: false,
+            publisher_transports: [Vec::new(), Vec::new()],
+            viewer_transports: [Vec::new(), Vec::new()],
+        };
         let mut ages = Vec::new();
-        let started=Instant::now();
+        let started = Instant::now();
         let remote_audio = remote_audio.ok_or(MediaError::Subscribe)?;
-        let mut audio = crate::audio_probe::AudioTask::start(audio_source, remote_audio.clone(), started);
-        for (focus,track) in selected.iter().enumerate() {
+        report.audio_source = if physical {
+            "physical_microphone"
+        } else {
+            "generated_440hz_pcm"
+        };
+        let mut audio = match audio_source {
+            Some(source) => {
+                crate::audio_probe::AudioTask::start(source, remote_audio.clone(), started)
+            }
+            None => crate::audio_probe::AudioTask::start_microphone(remote_audio.clone(), started),
+        };
+        for (focus, track) in selected.iter().enumerate() {
             audio.focus(focus == 1);
-            let mut stream=NativeVideoStream::new(track.rtc_track());
-            let phase_start=Instant::now();
-            let end=phase_start+phase;
-            let mut ticks=interval(Duration::from_secs_f64(1./fps as f64));
+            let mut stream = NativeVideoStream::new(track.rtc_track());
+            let phase_start = Instant::now();
+            let end = phase_start + phase;
+            let mut ticks = interval(Duration::from_secs_f64(1. / fps as f64));
             ticks.set_missed_tick_behavior(MissedTickBehavior::Skip);
             loop {
                 tokio::select! {
@@ -306,25 +481,34 @@ async fn probe(
         }
         let audio = audio.finish().await?;
         report.frame_age_samples = ages.len() as u64;
-        if let Some([p50,p95,max]) = crate::benchmark::latency_percentiles(&mut ages) {
+        if let Some([p50, p95, max]) = crate::benchmark::latency_percentiles(&mut ages) {
             report.frame_age_p50_ms = Some(p50);
             report.frame_age_p95_ms = Some(p95);
             report.frame_age_max_ms = Some(max);
         }
         report.tone_frequency_hz = audio.frequency_hz;
-        report.duration_ms=started.elapsed().as_millis() as u64;
+        report.duration_ms = started.elapsed().as_millis() as u64;
         report.audible_audio_frames = audio.frames;
         report.max_audio_gap_ms = audio.max_gap_ms;
         report.audio_verified = audio.verified;
+        report.microphone_verified =
+            physical && audio.verified && audio.frames.iter().all(|n| *n > 0);
         report.audio_source_calls = audio.source_calls;
         report.audio_source_max_interval_ms = audio.source_max_interval_ms;
         report.audio_source_max_wait_ms = audio.source_max_wait_ms;
         report.audio_received_frames = audio.received_frames;
         report.audio_receive_max_interval_ms = audio.receive_max_interval_ms;
         report.audio_observation_ms = audio.observation_ms;
+        Ok((report, remote_audio, selected))
+    };
+    let result = capture_and_stop(capture_deadline, measurement, || drop(microphone.take())).await;
+    let result = async {
+        let (mut report, remote_audio, selected) = result?;
         if let Ok(Ok(stats)) = timeout(Duration::from_secs(2), remote_audio.get_stats()).await {
             for stat in stats {
-                if let RtcStats::InboundRtp(input) = stat && input.stream.kind == "audio" {
+                if let RtcStats::InboundRtp(input) = stat
+                    && input.stream.kind == "audio"
+                {
                     report.audio_packets_received = Some(input.received.packets_received);
                     report.audio_packets_lost = Some(input.received.packets_lost);
                     report.audio_jitter_ms = Some(input.received.jitter * 1000.0);
@@ -333,16 +517,37 @@ async fn probe(
             }
         }
         for index in 0..2 {
-            let stats = timeout(Duration::from_secs(3), tracks[index].get_stats()).await.map_err(|_|MediaError::Stats)?.map_err(|_|MediaError::Stats)?;
+            let stats = timeout(Duration::from_secs(3), tracks[index].get_stats())
+                .await
+                .map_err(|_| MediaError::Stats)?
+                .map_err(|_| MediaError::Stats)?;
             report.publisher_transports[index] = crate::transport::selected_transports(&stats);
-            for stat in stats { if let RtcStats::OutboundRtp(out) = stat && !out.outbound.encoder_implementation.is_empty() { report.encoder[index] = Some(out.outbound.encoder_implementation); } }
-            let stats = timeout(Duration::from_secs(3), selected[index].get_stats()).await.map_err(|_|MediaError::Stats)?.map_err(|_|MediaError::Stats)?;
+            for stat in stats {
+                if let RtcStats::OutboundRtp(out) = stat
+                    && !out.outbound.encoder_implementation.is_empty()
+                {
+                    report.encoder[index] = Some(out.outbound.encoder_implementation);
+                }
+            }
+            let stats = timeout(Duration::from_secs(3), selected[index].get_stats())
+                .await
+                .map_err(|_| MediaError::Stats)?
+                .map_err(|_| MediaError::Stats)?;
             report.viewer_transports[index] = crate::transport::selected_transports(&stats);
-            for stat in stats { if let RtcStats::InboundRtp(input) = stat && !input.inbound.decoder_implementation.is_empty() { report.decoder[index] = Some(input.inbound.decoder_implementation); } }
+            for stat in stats {
+                if let RtcStats::InboundRtp(input) = stat
+                    && !input.inbound.decoder_implementation.is_empty()
+                {
+                    report.decoder[index] = Some(input.inbound.decoder_implementation);
+                }
+            }
         }
-        if report.received_frames.contains(&0) { return Err(MediaError::NoFrames); }
+        if report.received_frames.contains(&0) {
+            return Err(MediaError::NoFrames);
+        }
         Ok(report)
-    }.await;
+    }
+    .await;
     let mut clean = true;
     for (publisher, publication) in publishers.iter().zip(&publications) {
         if !matches!(
@@ -377,4 +582,123 @@ async fn probe(
         return Err(MediaError::Close);
     }
     Ok(report)
+}
+
+fn start_if_current<T>(
+    target: Option<&crate::loopback::PreviewTarget>,
+    start: impl FnOnce() -> Result<T, MediaError>,
+) -> Result<T, MediaError> {
+    if target.is_some_and(crate::loopback::PreviewTarget::cancelled) {
+        return Err(MediaError::Cancelled);
+    }
+    let device = start()?;
+    if target.is_some_and(crate::loopback::PreviewTarget::cancelled) {
+        return Err(MediaError::Cancelled);
+    }
+    Ok(device)
+}
+#[cfg(test)]
+mod device_start_tests {
+    use super::*;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    };
+    #[test]
+    fn cancelled_focus_never_calls_device_factory() {
+        let (frames, _) = crate::capture::frame_channel();
+        let target = crate::loopback::PreviewTarget {
+            frames,
+            generation: Arc::new(AtomicU64::new(2)),
+            session: 1,
+        };
+        let called = AtomicBool::new(false);
+        let result = start_if_current(Some(&target), || {
+            called.store(true, Ordering::Release);
+            Ok(())
+        });
+        assert!(!called.load(Ordering::Acquire));
+        assert!(matches!(result, Err(MediaError::Cancelled)));
+    }
+    #[test]
+    fn stop_during_focus_device_setup_drops_device() {
+        struct Device<'a>(&'a AtomicBool);
+        impl Drop for Device<'_> {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::Release);
+            }
+        }
+        let stopped = AtomicBool::new(false);
+        let (frames, _) = crate::capture::frame_channel();
+        let target = crate::loopback::PreviewTarget {
+            frames,
+            generation: Arc::new(AtomicU64::new(1)),
+            session: 1,
+        };
+        let result = start_if_current(Some(&target), || {
+            target.generation.store(2, Ordering::Release);
+            Ok(Device(&stopped))
+        });
+        assert!(matches!(result, Err(MediaError::Cancelled)));
+        assert!(stopped.load(Ordering::Acquire));
+    }
+}
+
+async fn capture_before<T>(
+    deadline: Option<Instant>,
+    work: impl std::future::Future<Output = Result<T, MediaError>>,
+) -> Result<T, MediaError> {
+    if deadline.is_some_and(|end| Instant::now() >= end) {
+        return Err(MediaError::NoFrames);
+    }
+    tokio::select! {biased;
+      _=async{match deadline{Some(end)=>sleep_until(end).await,None=>std::future::pending().await}}=>Err(MediaError::NoFrames),
+      result=work=>result,
+    }
+}
+async fn capture_and_stop<T>(
+    deadline: Option<Instant>,
+    work: impl std::future::Future<Output = Result<T, MediaError>>,
+    stop: impl FnOnce(),
+) -> Result<T, MediaError> {
+    let result = capture_before(deadline, work).await;
+    stop();
+    result
+}
+#[cfg(test)]
+mod budget_tests {
+    use super::*;
+    #[tokio::test]
+    async fn expired_capture_budget_does_not_poll_publication() {
+        let called = std::sync::atomic::AtomicBool::new(false);
+        let result = capture_before(Some(Instant::now()), async {
+            called.store(true, std::sync::atomic::Ordering::Release);
+            Ok(())
+        })
+        .await;
+        assert!(matches!(result, Err(MediaError::NoFrames)));
+        assert!(!called.load(std::sync::atomic::Ordering::Acquire));
+    }
+    #[tokio::test]
+    async fn slow_publication_is_bounded_by_remaining_capture_budget() {
+        let result = capture_before(Some(Instant::now() + Duration::from_millis(10)), async {
+            tokio::time::sleep(Duration::from_millis(40)).await;
+            Ok(())
+        })
+        .await;
+        assert!(matches!(result, Err(MediaError::NoFrames)));
+    }
+    #[tokio::test]
+    async fn completed_capture_is_retained_while_later_stats_are_slow() {
+        let end = Instant::now() + Duration::from_millis(30);
+        let stopped = std::sync::atomic::AtomicBool::new(false);
+        let proof = capture_and_stop(Some(end), async { Ok(42) }, || {
+            stopped.store(true, std::sync::atomic::Ordering::Release)
+        })
+        .await
+        .unwrap();
+        assert!(stopped.load(std::sync::atomic::Ordering::Acquire));
+        tokio::time::sleep_until(end + Duration::from_millis(10)).await;
+        assert_eq!(proof, 42);
+    }
 }

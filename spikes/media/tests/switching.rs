@@ -222,3 +222,35 @@ async fn stopping_a_profile_preview_cancels_its_owned_rooms() {
         .unwrap();
     assert!(matches!(result, Err(MediaError::Cancelled)), "{result:?}");
 }
+
+#[tokio::test]
+async fn physical_focus_rejects_remote_fixture_before_join_or_device_access() {
+    use media_spike::{
+        capture::frame_channel, loopback::PreviewTarget, switching::run_microphone_focus_preview,
+    };
+    use std::sync::{Arc, atomic::AtomicU64};
+    let (frames, _) = frame_channel();
+    let target = PreviewTarget {
+        frames,
+        generation: Arc::new(AtomicU64::new(1)),
+        session: 1,
+    };
+    let result =
+        run_microphone_focus_preview("ws://example.invalid", "p1", "p2", "v", target).await;
+    assert!(matches!(result, Err(MediaError::InvalidInput)));
+}
+#[tokio::test]
+async fn pre_cancelled_physical_focus_never_joins_or_opens_device() {
+    use media_spike::{
+        capture::frame_channel, loopback::PreviewTarget, switching::run_microphone_focus_preview,
+    };
+    use std::sync::{Arc, atomic::AtomicU64};
+    let (frames, _) = frame_channel();
+    let target = PreviewTarget {
+        frames,
+        generation: Arc::new(AtomicU64::new(2)),
+        session: 1,
+    };
+    let result = run_microphone_focus_preview("ws://127.0.0.1:7880", "p1", "p2", "v", target).await;
+    assert!(matches!(result, Err(MediaError::Cancelled)));
+}

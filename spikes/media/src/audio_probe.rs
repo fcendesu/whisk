@@ -34,6 +34,16 @@ pub(crate) struct AudioTask {
 }
 impl AudioTask {
     pub fn start(source: NativeAudioSource, track: RemoteAudioTrack, started: Instant) -> Self {
+        Self::start_inner(Some(source), track, started)
+    }
+    pub fn start_microphone(track: RemoteAudioTrack, started: Instant) -> Self {
+        Self::start_inner(None, track, started)
+    }
+    fn start_inner(
+        source: Option<NativeAudioSource>,
+        track: RemoteAudioTrack,
+        started: Instant,
+    ) -> Self {
         let (phase, phase_rx) = watch::channel(false);
         let (stop, stop_rx) = oneshot::channel();
         let task = tokio::task::spawn_blocking(move || {
@@ -79,29 +89,33 @@ impl Drop for AudioTask {
     }
 }
 async fn monitor(
-    source: NativeAudioSource,
+    source: Option<NativeAudioSource>,
     track: RemoteAudioTrack,
     started: Instant,
     phase: watch::Receiver<bool>,
     stop: oneshot::Receiver<()>,
 ) -> Result<ToneReport, MediaError> {
     let mut stream = NativeAudioStream::new(track.rtc_track(), 48_000, 1);
-    let result = monitor_io(
-        move |frame| {
-            let source = source.clone();
-            async move {
-                source
-                    .capture_frame(&frame)
-                    .await
-                    .map_err(|_| MediaError::Publish)
-            }
-        },
-        &mut stream,
-        started,
-        phase,
-        stop,
-    )
-    .await;
+    let result = if let Some(source) = source {
+        monitor_io(
+            move |frame| {
+                let source = source.clone();
+                async move {
+                    source
+                        .capture_frame(&frame)
+                        .await
+                        .map_err(|_| MediaError::Publish)
+                }
+            },
+            &mut stream,
+            started,
+            phase,
+            stop,
+        )
+        .await
+    } else {
+        monitor_received(&mut stream, started, phase, stop, None, true).await
+    };
     stream.close();
     result
 }
@@ -167,7 +181,7 @@ async fn monitor_io<C, F, S>(
     stream: &mut S,
     started: Instant,
     phase: watch::Receiver<bool>,
-    mut stop: oneshot::Receiver<()>,
+    stop: oneshot::Receiver<()>,
 ) -> Result<ToneReport, MediaError>
 where
     C: FnMut(AudioFrame<'static>) -> F + Send + 'static,
@@ -182,10 +196,23 @@ where
             .map_err(|_| MediaError::Publish)?;
         runtime.block_on(feed_audio(capture, started, feed_stopped))
     });
-    let mut feed = FeedTask {
+    let feed = FeedTask {
         stop: feed_stop,
         task,
     };
+    monitor_received(stream, started, phase, stop, Some(feed), false).await
+}
+async fn monitor_received<S>(
+    stream: &mut S,
+    started: Instant,
+    phase: watch::Receiver<bool>,
+    mut stop: oneshot::Receiver<()>,
+    mut feed: Option<FeedTask>,
+    physical: bool,
+) -> Result<ToneReport, MediaError>
+where
+    S: futures_util::Stream<Item = AudioFrame<'static>> + Unpin,
+{
     let mut completed = None;
     let mut measured = 0u64;
     let mut crossings = 0u64;
@@ -195,7 +222,7 @@ where
     let outcome = loop {
         tokio::select! {
             _ = &mut stop => break Ok(()),
-            result = &mut feed.task => {
+            result = async { match feed.as_mut(){Some(feed)=>(&mut feed.task).await,None=>std::future::pending().await} } => {
                 completed = Some(result);
                 break Err(MediaError::Publish);
             }
@@ -218,15 +245,20 @@ where
     };
     // Observation ends when receive monitoring stops, before source cleanup.
     let observation_ms = started.elapsed().as_millis() as u64;
-    feed.stop.send_replace(true);
-    let source = match completed {
-        Some(result) => result,
-        None => timeout(Duration::from_secs(2), &mut feed.task)
-            .await
-            .map_err(|_| MediaError::Publish)?,
+    let source = if let Some(feed) = feed.as_mut() {
+        feed.stop.send_replace(true);
+        let source = match completed {
+            Some(result) => result,
+            None => timeout(Duration::from_secs(2), &mut feed.task)
+                .await
+                .map_err(|_| MediaError::Publish)?,
+        };
+        outcome?;
+        source.map_err(|_| MediaError::Publish)??
+    } else {
+        outcome?;
+        FeedReport::default()
     };
-    outcome?;
-    let source = source.map_err(|_| MediaError::Publish)??;
     let continuity = continuity.finish(observation_ms);
     let activity = activity.finish(observation_ms);
     let frequency_hz = if measured > 0 {
@@ -242,9 +274,13 @@ where
         receive_max_interval_ms: activity.max_gap_ms,
         observation_ms,
         frames: continuity.audible_frames,
-        max_gap_ms: continuity.max_gap_ms,
-        frequency_hz,
-        verified: continuity.continuous && (420.0..460.0).contains(&frequency_hz),
+        max_gap_ms: if physical {
+            activity.max_gap_ms
+        } else {
+            continuity.max_gap_ms
+        },
+        frequency_hz: if physical { 0.0 } else { frequency_hz },
+        verified: assess_audio(physical, &continuity, &activity, frequency_hz),
     })
 }
 
@@ -395,5 +431,41 @@ mod tests {
         .await
         .expect("source failure must stop receive monitoring");
         assert!(matches!(result, Err(MediaError::Publish)));
+    }
+}
+
+#[cfg(test)]
+mod physical_tests {
+    use super::*;
+    #[test]
+    fn silent_microphone_pcm_is_continuous_but_is_not_input_activity_proof() {
+        let mut pcm = AudioContinuity::default();
+        for i in 1..=40 {
+            pcm.observe(i > 20, i * 10);
+        }
+        let pcm = pcm.finish(410);
+        let silent = AudioContinuity::default().finish(410);
+        assert!(assess_audio(true, &silent, &pcm, 0.0));
+        assert!(!assess_audio(false, &silent, &pcm, 0.0));
+    }
+    #[test]
+    fn microphone_pcm_gap_is_not_hidden_by_non_silent_counters() {
+        let mut pcm = AudioContinuity::default();
+        pcm.observe(false, 10);
+        pcm.observe(true, 400);
+        let pcm = pcm.finish(410);
+        assert!(!assess_audio(true, &pcm, &pcm, 440.0));
+    }
+}
+fn assess_audio(
+    physical: bool,
+    audible: &crate::benchmark::AudioContinuityReport,
+    pcm: &crate::benchmark::AudioContinuityReport,
+    hz: f64,
+) -> bool {
+    if physical {
+        pcm.continuous
+    } else {
+        audible.continuous && (420.0..460.0).contains(&hz)
     }
 }

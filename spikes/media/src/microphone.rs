@@ -54,9 +54,9 @@ pub struct AudioReport {
 
 /// Owns the physical device only while the measurement is active. This probe
 /// runs in a separate process: disabling ADM playout cannot affect another app.
-struct MicrophoneGuard(PlatformAudio);
+pub(crate) struct MicrophoneGuard(PlatformAudio);
 impl MicrophoneGuard {
-    fn start() -> Result<Self, MediaError> {
+    pub(crate) fn start() -> Result<Self, MediaError> {
         let guard = Self(PlatformAudio::new().map_err(|_| MediaError::Capture)?);
         let runtime = LkRuntime::instance();
         runtime.pc_factory().set_adm_playout_enabled(false);

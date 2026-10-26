@@ -800,3 +800,57 @@ and TURN paths), and 11 Python tests passed. Formatting, clippy across all targe
 and features with warnings denied, shell syntax and diff checks passed. Independent
 review found no actionable defects. The saved Media Lab, Audio Lab and Speaker Lab
 bundle hashes matched; no signed app was rebuilt and CI was not dispatched.
+
+## Physical microphone with video focus — implementation pending device proof
+
+[Issue #13](https://github.com/fcendesu/whisk/issues/13) adds **Whisk Focus Lab**,
+a separate `dev.whisk.focus-lab` bundle. The granted Media Lab, Audio Lab and
+Speaker Lab bundles are preserved. Launch it idle with:
+
+```sh
+./scripts/run-focus-lab.sh
+# After the first build, quit and relaunch without changing its signing identity:
+./scripts/run-focus-lab.sh --reuse-build
+```
+
+Press **Start microphone + focus test** yourself, allow microphone access if
+macOS asks, then speak throughout both five-second phases. Two generated 720p30
+video publishers share the local fixture room with one native viewer and the
+physical default microphone. The viewer changes focused video while keeping
+the same microphone subscription. The app displays decoded counters; it does
+not draw the video frames or certify GPU presentation. Actual capture/GPUI
+measurements remain #14.
+
+The microphone starts after room/video setup and has a 15-second application
+budget including native device and audio track setup. Publication and receive
+observation share the absolute deadline. Stop/window close cancel the generation;
+checks before and after device setup prevent a delayed start after cancellation.
+Device capture stops before RTP/codec statistics and room cleanup. Synchronous
+native driver calls cannot be preempted by asynchronous deadlines. Speaker
+playback stays disabled.
+
+Each launch mints separate short-lived publisher/viewer tokens in a new local
+room; only `ws://127.0.0.1` is accepted by this physical test. No microphone PCM,
+credentials or device identifiers/names are saved. The counter report is
+`Whisk Focus Lab-focus-metrics.json` beside the app. Source context is
+`physical_microphone` / `system_default_microphone_coreaudio`; profile is 720p30.
+
+For physical input, `audio_continuity_basis=decoded_microphone_pcm`: silent PCM
+counts toward delivery continuity. Both phases need decoded frames and the
+maximum startup/inter-frame/trailing decoded receive gap must be strictly below
+250 ms for `audio_verified`. `microphone_verified` additionally needs non-silent
+frames (sample magnitude >500) in each phase; this is scoped input activity,
+not calibrated speech or quality certification. `audible_audio_frames` retains
+those non-silent counts, `audio_received_frames` counts all PCM, and
+`tone_frequency_hz=0` and zero application source-call counters are inapplicable
+to the device source. Generated tone probes retain their audible/frequency gate.
+`quality_certified` stays false.
+
+Implementation checks: 59 deterministic Rust, 18 generated-input local-SFU and
+11 Python tests pass; formatting, clippy with warnings denied, shell syntax and
+diff checks pass. Added regressions cover silent PCM versus delivery gaps,
+cancellation before/during device setup, expired/slow publication budgets, and
+retaining a completed proof while later stats are slow. Review identified the
+publication/deadline and post-capture stats boundary issues; both were repaired
+and checked. Physical microphone/video-focus observations are still pending;
+these automated checks never enable a microphone and do not complete #13.
