@@ -235,18 +235,19 @@ probe; background subscription/layer adaptation remains future M5 work.
 ## Remaining M0 gates
 
 Window capture, H.264 publish/decode, GPUI CPU preparation, physical microphone
-publish/decode, generated audio continuity during video switching, UDP TURN and
-controlled network failures have measured evidence below. M0 is incomplete:
-
-- Microphone continuity with actual video focus switching still needs device
-  evidence. Separate microphone and user-confirmed speaker paths now work.
-- Permission revocation, device removal/recovery and signing persistence remain
-  unverified. The unchanged screen bundle now works after an app-scoped reset.
-- Sustained actual-capture-to-GPUI behavior at higher profiles is not certified.
-  Ten-minute 1080/1440 records use generated video and native decode counters.
+continuity across video focus (#13), generated audio continuity, UDP TURN and
+controlled network failures have measured evidence below. The actual ten-minute
+capture matrix (#14) is also recorded, with scoped performance and presentation
+limits. M0 is incomplete:
+- Permission revocation and device removal/recovery remain unverified (#15).
+  Granted frozen screen bundles worked across the recorded process restarts;
+  this does not prove persistence across signing changes.
+- Actual ten-minute capture reached 1080/1440 dimensions but did not demonstrate
+  requested 60 FPS consumption/preparation; high-profile quality remains uncertified.
 - GPU presentation, per-process GPU/media-engine use, capture-to-display latency
   and zero-copy remain unknown. CPU preparation and whole-system AGX counters
-  are reported under their actual scope.
+  are reported under their actual scope. Visibility/presentation follow-up #24
+  must be classified explicitly by the M0 acceptance review #16.
 - Dependency/license and packaged-runtime audits remain required before release.
 
 No high-profile release certification, GPU zero-copy, production deployment or
@@ -875,7 +876,7 @@ within two minutes of launch; if credentials expire while waiting, quit and reus
 the same build again. The successful short physical run completes #13; sustained
 actual-capture/GPUI proof (#14), recovery (#15) and M0 acceptance (#16) remain open.
 
-## Sustained selected-window Capture Lab — implementation pending measurements
+## Sustained selected-window Capture Lab — 2026-10-26
 
 [Issue #14](https://github.com/fcendesu/whisk/issues/14) adds a separate
 `dev.whisk.capture-lab` bundle and an owned animated test window. Existing granted
@@ -946,5 +947,70 @@ SDK-declined count; no continuity or profile threshold was relaxed.
 Implementation checks: 62 deterministic Rust, 19 explicit live SFU and 15 Python
 tests pass, plus formatting, clippy across all targets/features with warnings
 denied, shell syntax and diff checks. Live high-profile capture-input tests use
-injected fixture frames and do not grant screen access. Actual ten-minute 720p30,
-1080p60 and 1440p60 selected-window/GPUI records are still pending; #14 remains open.
+injected fixture frames and do not grant screen access. The actual ten-minute records below complete the scoped collection requested
+by #14; presentation and high-profile quality remain unverified.
+
+
+### Actual ten-minute capture matrix
+
+The user enabled the separately identified Capture Lab once; the same frozen
+bundle was reused for all three runs. Only its own animated test window was
+selected. macOS 27.0.1 / Apple M4 / arm64 / unoptimized development build;
+ScreenCaptureKit 11.1.0, LiveKit 0.9.7 and GPUI 0.2.2. All runs reported
+`video/H264` and VideoToolbox encode/decode implementations, successful native
+capture stop and a completed 600-second network observation. This does not
+independently establish hardware acceleration. Other application load and viewer
+visibility were uncontrolled. No builds or test suites ran during observations.
+
+| Requested profile | Actual capture / consumed decode size | Network observation ms | Copied native frames | Accepted submissions | Consumed decoded frames | CPU-prepared frames |
+|---|---|---:|---:|---:|---:|---:|
+| [720p30](results/2026-10-26-macos-arm64-capture-720p30.json) | 1280×720 / 1280×720 | 600003 | 17636 | 17619 | 17620 | 17620 |
+| [1080p60](results/2026-10-26-macos-arm64-capture-1080p60.json) | 1920×1080 / 1920×1080 | 600002 | 33871 | 33731 | 33638 | 33104 |
+| [1440p60](results/2026-10-26-macos-arm64-capture-1440p60.json) | 2560×1440 / 2560×1440 | 600003 | 33217 | 33028 | 32948 | 32787 |
+
+| Profile | Capture-copy FPS | Accepted submission FPS | Consumed decode FPS | CPU preparation FPS | CPU preparation p95 µs | Sampled RSS maximum MiB |
+|---|---:|---:|---:|---:|---:|---:|
+| 720p30 | 29.37 | 29.36 | 29.37 | 29.34 | 902 | 169.47 |
+| 1080p60 | 56.39 | 56.22 | 56.06 | 55.12 | 801 | 237.88 |
+| 1440p60 | 55.31 | 55.05 | 54.91 | 54.60 | 1880 | 360.20 |
+
+The per-row JSON files retain all counters, separate observation windows,
+requested/actual dimensions, conversion calls/bytes, queue contracts and every
+numeric CPU/RSS sample. SDK-declined submissions were 1 / 47 / 34 respectively.
+Capture BGRA copies and UI BGRA copies are counted independently; BGRA/I420
+conversion calls/output bytes do not account for opaque SDK/driver/GPU copies.
+`decoded_frames` means frames consumed by the application from the SDK stream,
+not total decoder output. SDK keepalives/repetition are not frame-matched, and
+bounded-queue drops are not exposed; counts need not correspond one-to-one.
+Do not interpret differences between counts with different windows as drops.
+
+Both higher-profile attempts reached their requested dimensions but **did not
+demonstrate the requested 60 FPS**. The 720p30 baseline also averaged below 30;
+there is no strict sustained 30 FPS or release-quality certification. The existing
+certification/fallback policy is unchanged. These low-entropy, potentially scaled
+test-window results do not certify real games, full-resolution source detail,
+other machines/platforms or stable foreground presentation.
+
+The pinned SDK `NativeVideoStream::new` uses a bounded one-frame queue and drops
+oldest on overflow; the application also uses latest-frame watch handoffs and a
+two-frame renderer queue. ScreenCaptureKit queue depth two is requested;
+actual framework buffering/drop counts and opaque codec/transport buffers remain
+unmeasured. GPU-presented FPS, attributable/whole-system GPU utilization and
+capture-to-display latency remain explicitly null. There is no zero-copy claim.
+
+Viewer visibility matters: view-tree build rates were approximately 2.46 / 49.55 /
+6.01 per second, while CPU preparation continued. After the 1440 terminal reports
+completed, an inactive screenshot still showed early test frame 6091 and the old
+running status. Raising it did not establish a fresh paint; subsequent activation
+returned `noWindowsAvailable` while the process remained. Snapshot caching, OS
+visibility/occlusion and application repaint scheduling were not isolated. The
+completed owned process was terminated after capture/room cleanup and all saved
+reports were verified. [#24](https://github.com/fcendesu/whisk/issues/24) tracks
+controlled visibility/presentation measurements; this does not approve deferring
+an M0 requirement. The acceptance review #16 must classify these limits.
+
+All five tested lab bundles still match their saved SHA256 manifests; Capture Lab
+signature verification passes. The initial tool-window stacking problem was
+resolved by raising the controls above the source; idle sessions without a publish
+marker were not counted as measurements. Only counter data is committed. Recovery
+#15 and M0 acceptance #16 remain open, and CI stays manual.
