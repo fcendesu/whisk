@@ -39,6 +39,19 @@ pub struct SwitchingReport {
     pub wrong_source_frames: u64,
     pub duration_ms: u64,
     pub audio_verified: bool,
+    pub audio_source_calls: u64,
+    pub audio_source_max_interval_ms: u64,
+    pub audio_source_max_wait_ms: u64,
+    pub audio_received_frames: [u64; 2],
+    pub audio_receive_max_interval_ms: u64,
+    pub audio_observation_ms: u64,
+    pub audio_packets_received: Option<u64>,
+    pub audio_packets_lost: Option<i64>,
+    pub audio_jitter_ms: Option<f64>,
+    pub audio_concealed_samples: Option<u64>,
+    pub audio_rtp_stats_scope: &'static str,
+    pub video_submit_max_us: u64,
+    pub video_frame_prepare_max_us: u64,
     pub audible_audio_frames: [u64; 2],
     pub max_audio_gap_ms: u64,
     pub tone_frequency_hz: f64,
@@ -237,10 +250,11 @@ async fn probe(
         }).await.map_err(|_|MediaError::Subscribe)??;
         let selected=[remote[0].take().ok_or(MediaError::Subscribe)?,remote[1].take().ok_or(MediaError::Subscribe)?];
         let mut patterns=[[40,140,230,255],[230,120,40,255]].map(|color|VideoFrame {width,height,bgra:color.into_iter().cycle().take(width as usize * height as usize * 4).collect::<Vec<_>>().into()});
-        let mut report=SwitchingReport{submitted_frames:[0;2],received_size:[[0;2];2],requested_profile:profile,requested_fps:fps,frame_age_samples:0,invalid_timestamps:0,frame_age_p50_ms:None,frame_age_p95_ms:None,frame_age_max_ms:None,encoder:[None,None],decoder:[None,None],phase_duration_ms:[0;2],received_frames:[0;2],wrong_source_frames:0,duration_ms:0,audio_verified:false,audible_audio_frames:[0;2],max_audio_gap_ms:0,tone_frequency_hz:0.0,microphone_verified:false,audio_source:"generated_440hz_pcm",quality_certified:false,publisher_transports:[Vec::new(),Vec::new()],viewer_transports:[Vec::new(),Vec::new()]};
+        let mut report=SwitchingReport{submitted_frames:[0;2],received_size:[[0;2];2],requested_profile:profile,requested_fps:fps,frame_age_samples:0,invalid_timestamps:0,frame_age_p50_ms:None,frame_age_p95_ms:None,frame_age_max_ms:None,encoder:[None,None],decoder:[None,None],phase_duration_ms:[0;2],received_frames:[0;2],wrong_source_frames:0,duration_ms:0,audio_verified:false,audio_source_calls:0,audio_source_max_interval_ms:0,audio_source_max_wait_ms:0,audio_received_frames:[0;2],audio_receive_max_interval_ms:0,audio_observation_ms:0,audio_packets_received:None,audio_packets_lost:None,audio_jitter_ms:None,audio_concealed_samples:None,audio_rtp_stats_scope:"track_cumulative_after_observation",video_submit_max_us:0,video_frame_prepare_max_us:0,audible_audio_frames:[0;2],max_audio_gap_ms:0,tone_frequency_hz:0.0,microphone_verified:false,audio_source:"generated_440hz_pcm",quality_certified:false,publisher_transports:[Vec::new(),Vec::new()],viewer_transports:[Vec::new(),Vec::new()]};
         let mut ages = Vec::new();
         let started=Instant::now();
-        let mut audio = crate::audio_probe::AudioTask::start(audio_source, remote_audio.ok_or(MediaError::Subscribe)?, started);
+        let remote_audio = remote_audio.ok_or(MediaError::Subscribe)?;
+        let mut audio = crate::audio_probe::AudioTask::start(audio_source, remote_audio.clone(), started);
         for (focus,track) in selected.iter().enumerate() {
             audio.focus(focus == 1);
             let mut stream=NativeVideoStream::new(track.rtc_track());
@@ -253,11 +267,13 @@ async fn probe(
                     _=sleep_until(end)=>break,
                     error=audio.stopped_unexpectedly()=>return Err(error),
                     _=ticks.tick()=>{
+                        let prepare_started = Instant::now();
                         for index in 0..2 {
                             crate::frame_clock::stamp(&mut patterns[index], started.elapsed().as_millis() as u32)?;
                             let frame=RtcFrame{rotation:VideoRotation::VideoRotation0,timestamp_us:started.elapsed().as_micros().min(i64::MAX as u128) as i64,frame_metadata:None,buffer:bgra_to_i420(&patterns[index])?};
                             if sources[index].capture_frame(&frame) { report.submitted_frames[index]+=1; }
                         }
+                        report.video_submit_max_us = report.video_submit_max_us.max(prepare_started.elapsed().as_micros().min(u64::MAX as u128) as u64);
                     }
                     event=viewer.next_event()=>{
                         match event {
@@ -267,7 +283,9 @@ async fn probe(
                         }
                     }
                     frame=stream.next()=>{
+                        let prepare_started = Instant::now();
                         let frame=decoded_bgra(&frame.ok_or(MediaError::Decode)?)?;
+                        report.video_frame_prepare_max_us = report.video_frame_prepare_max_us.max(prepare_started.elapsed().as_micros().min(u64::MAX as u128) as u64);
                         report.received_size[focus] = [frame.width, frame.height];
                         let [b,g,r,_]:[u8;4]=frame.bgra[..4].try_into().map_err(|_|MediaError::Decode)?;
                         if b<15 && g<15 && r<15 { continue; }
@@ -298,6 +316,22 @@ async fn probe(
         report.audible_audio_frames = audio.frames;
         report.max_audio_gap_ms = audio.max_gap_ms;
         report.audio_verified = audio.verified;
+        report.audio_source_calls = audio.source_calls;
+        report.audio_source_max_interval_ms = audio.source_max_interval_ms;
+        report.audio_source_max_wait_ms = audio.source_max_wait_ms;
+        report.audio_received_frames = audio.received_frames;
+        report.audio_receive_max_interval_ms = audio.receive_max_interval_ms;
+        report.audio_observation_ms = audio.observation_ms;
+        if let Ok(Ok(stats)) = timeout(Duration::from_secs(2), remote_audio.get_stats()).await {
+            for stat in stats {
+                if let RtcStats::InboundRtp(input) = stat && input.stream.kind == "audio" {
+                    report.audio_packets_received = Some(input.received.packets_received);
+                    report.audio_packets_lost = Some(input.received.packets_lost);
+                    report.audio_jitter_ms = Some(input.received.jitter * 1000.0);
+                    report.audio_concealed_samples = Some(input.inbound.concealed_samples);
+                }
+            }
+        }
         for index in 0..2 {
             let stats = timeout(Duration::from_secs(3), tracks[index].get_stats()).await.map_err(|_|MediaError::Stats)?.map_err(|_|MediaError::Stats)?;
             report.publisher_transports[index] = crate::transport::selected_transports(&stats);

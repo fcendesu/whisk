@@ -1,0 +1,826 @@
+{
+  "issue": 23,
+  "date": "2026-10-26",
+  "scope": "Generated PCM receive monitoring and source isolation; no physical recording or profile certification",
+  "historical_failure": "2026-10-26-macos-arm64-profile-audio-failure.json",
+  "historical_cause_limit": "Original 648ms sample lacks source timing; exact historical cause is not uniquely established. Ordinary CLI baseline trials did not reproduce it. Controlled source stalls demonstrate an independently actionable receive-polling coupling.",
+  "controlled_regressions": {
+    "old_coupled_async_source_delay_ms": 350,
+    "old_coupled_async_receive_gap_ms": 704,
+    "old_coupled_sync_source_delay_ms": 350,
+    "old_coupled_sync_receive_gap_ms": 356,
+    "fixed_injected_source_delay_ms": 400,
+    "fixed_assertions": [
+      "max audible receive gap <250ms",
+      "both focus phases >=10 audible frames",
+      "generated frequency and continuity verified",
+      "measured source completion wait >=390ms",
+      "receive observation <650ms, excluding source cleanup"
+    ],
+    "input_limit": "Independent healthy synthetic input models a receiver that must remain responsive during outgoing source delay; does not simulate native packet loss or claim source audio stays continuous during starvation."
+  },
+  "metric_scope": {
+    "audio_observation_ms": "Receive monitoring window, including startup and trailing gaps; ends before source cleanup.",
+    "audio_source_counters": "Source submissions through worker shutdown, including final in-flight completion. One call at a time; max interval includes startup, max wait includes synchronous SDK call and asynchronous completion. Not normalized to receive observation time.",
+    "audio_received_frames": "All decoded PCM frames, including silence; audible counts and max_audio_gap_ms remain separate.",
+    "audio_receive_max_interval_ms": "Application polling intervals for decoded PCM, including leading/trailing silence; not packet arrival timestamps or pure decoder duration. SDK default bounded 10-frame receive queue can drop oldest without a public drop counter.",
+    "audio_rtp_stats": "Optional numeric snapshot of cumulative track stats after observation and source cleanup; not a delta over audio_observation_ms. Null means unavailable. Jitter is RTP interarrival jitter in ms; concealment samples do not isolate the source of loss.",
+    "video_submit_max_us": "Largest wall duration to stamp, BGRA-to-I420 convert and submit both generated source frames in a tick.",
+    "video_frame_prepare_max_us": "Largest wall duration for decoded I420-to-BGRA conversion; excludes native decoding and GPU presentation."
+  },
+  "variants": {
+    "coupled-baseline": [
+      {
+        "submitted_frames": [
+          121,
+          121
+        ],
+        "received_size": [
+          [
+            1280,
+            720
+          ],
+          [
+            1280,
+            720
+          ]
+        ],
+        "requested_profile": "p720_f30",
+        "requested_fps": 30,
+        "frame_age_samples": 115,
+        "invalid_timestamps": 0,
+        "frame_age_p50_ms": 28,
+        "frame_age_p95_ms": 30,
+        "frame_age_max_ms": 125,
+        "encoder": [
+          "VideoToolbox",
+          "VideoToolbox"
+        ],
+        "decoder": [
+          "VideoToolbox",
+          "VideoToolbox"
+        ],
+        "phase_duration_ms": [
+          2001,
+          2004
+        ],
+        "received_frames": [
+          55,
+          60
+        ],
+        "wrong_source_frames": 0,
+        "duration_ms": 4005,
+        "audio_verified": true,
+        "audio_source_calls": 201,
+        "audio_source_max_interval_ms": 24,
+        "audio_source_max_wait_ms": 0,
+        "audio_received_frames": [
+          200,
+          201
+        ],
+        "audio_receive_max_interval_ms": 13,
+        "audio_observation_ms": 4005,
+        "audible_audio_frames": [
+          194,
+          201
+        ],
+        "max_audio_gap_ms": 61,
+        "tone_frequency_hz": 439.873417721519,
+        "microphone_verified": false,
+        "audio_source": "generated_440hz_pcm",
+        "quality_certified": false,
+        "publisher_transports": [
+          [
+            {
+              "protocol": "udp",
+              "local_candidate_type": "host",
+              "remote_candidate_type": "prflx",
+              "state": "succeeded",
+              "nominated": true,
+              "rtt_ms": 2.0,
+              "bytes_sent": 114258,
+              "bytes_received": 34595
+            }
+          ],
+          [
+            {
+              "protocol": "udp",
+              "local_candidate_type": "prflx",
+              "remote_candidate_type": "host",
+              "state": "succeeded",
+              "nominated": true,
+              "rtt_ms": 2.0,
+              "bytes_sent": 84260,
+              "bytes_received": 1260
+            }
+          ]
+        ],
+        "viewer_transports": [
+          [
+            {
+              "protocol": "udp",
+              "local_candidate_type": "prflx",
+              "remote_candidate_type": "host",
+              "state": "succeeded",
+              "nominated": true,
+              "rtt_ms": 3.0,
+              "bytes_sent": 1920,
+              "bytes_received": 118003
+            }
+          ],
+          [
+            {
+              "protocol": "udp",
+              "local_candidate_type": "prflx",
+              "remote_candidate_type": "host",
+              "state": "succeeded",
+              "nominated": true,
+              "rtt_ms": 3.0,
+              "bytes_sent": 1920,
+              "bytes_received": 118003
+            }
+          ]
+        ],
+        "measurement_context": {
+          "variant": "coupled-baseline",
+          "os": "macOS 27.0.1",
+          "hardware": "Apple M4",
+          "arch": "arm64",
+          "build": "development",
+          "foreground_load_controlled": false,
+          "process_wall_ms": 6320,
+          "process_cpu_ms": 2226
+        }
+      },
+      {
+        "submitted_frames": [
+          240,
+          240
+        ],
+        "received_size": [
+          [
+            1920,
+            1080
+          ],
+          [
+            1920,
+            1080
+          ]
+        ],
+        "requested_profile": "p1080_f60",
+        "requested_fps": 60,
+        "frame_age_samples": 238,
+        "invalid_timestamps": 0,
+        "frame_age_p50_ms": 26,
+        "frame_age_p95_ms": 37,
+        "frame_age_max_ms": 38,
+        "encoder": [
+          "VideoToolbox",
+          "VideoToolbox"
+        ],
+        "decoder": [
+          "VideoToolbox",
+          "VideoToolbox"
+        ],
+        "phase_duration_ms": [
+          2000,
+          2001
+        ],
+        "received_frames": [
+          119,
+          119
+        ],
+        "wrong_source_frames": 0,
+        "duration_ms": 4003,
+        "audio_verified": true,
+        "audio_source_calls": 201,
+        "audio_source_max_interval_ms": 21,
+        "audio_source_max_wait_ms": 0,
+        "audio_received_frames": [
+          201,
+          200
+        ],
+        "audio_receive_max_interval_ms": 12,
+        "audio_observation_ms": 4002,
+        "audible_audio_frames": [
+          195,
+          200
+        ],
+        "max_audio_gap_ms": 61,
+        "tone_frequency_hz": 445.0632911392405,
+        "microphone_verified": false,
+        "audio_source": "generated_440hz_pcm",
+        "quality_certified": false,
+        "publisher_transports": [
+          [
+            {
+              "protocol": "udp",
+              "local_candidate_type": "prflx",
+              "remote_candidate_type": "host",
+              "state": "succeeded",
+              "nominated": true,
+              "rtt_ms": 1.0,
+              "bytes_sent": 204598,
+              "bytes_received": 1489
+            }
+          ],
+          [
+            {
+              "protocol": "udp",
+              "local_candidate_type": "prflx",
+              "remote_candidate_type": "host",
+              "state": "succeeded",
+              "nominated": true,
+              "rtt_ms": 1.0,
+              "bytes_sent": 161781,
+              "bytes_received": 2016
+            }
+          ]
+        ],
+        "viewer_transports": [
+          [
+            {
+              "protocol": "udp",
+              "local_candidate_type": "prflx",
+              "remote_candidate_type": "host",
+              "state": "succeeded",
+              "nominated": true,
+              "rtt_ms": 1.0,
+              "bytes_sent": 2365,
+              "bytes_received": 267958
+            }
+          ],
+          [
+            {
+              "protocol": "udp",
+              "local_candidate_type": "prflx",
+              "remote_candidate_type": "host",
+              "state": "succeeded",
+              "nominated": true,
+              "rtt_ms": 1.0,
+              "bytes_sent": 2365,
+              "bytes_received": 267958
+            }
+          ]
+        ],
+        "measurement_context": {
+          "variant": "coupled-baseline",
+          "os": "macOS 27.0.1",
+          "hardware": "Apple M4",
+          "arch": "arm64",
+          "build": "development",
+          "foreground_load_controlled": false,
+          "process_wall_ms": 5259,
+          "process_cpu_ms": 2902
+        }
+      },
+      {
+        "submitted_frames": [
+          234,
+          233
+        ],
+        "received_size": [
+          [
+            2560,
+            1440
+          ],
+          [
+            2560,
+            1440
+          ]
+        ],
+        "requested_profile": "p1440_f60",
+        "requested_fps": 60,
+        "frame_age_samples": 228,
+        "invalid_timestamps": 0,
+        "frame_age_p50_ms": 30,
+        "frame_age_p95_ms": 65,
+        "frame_age_max_ms": 118,
+        "encoder": [
+          "VideoToolbox",
+          "VideoToolbox"
+        ],
+        "decoder": [
+          "VideoToolbox",
+          "VideoToolbox"
+        ],
+        "phase_duration_ms": [
+          2006,
+          2009
+        ],
+        "received_frames": [
+          119,
+          109
+        ],
+        "wrong_source_frames": 0,
+        "duration_ms": 4016,
+        "audio_verified": true,
+        "audio_source_calls": 199,
+        "audio_source_max_interval_ms": 67,
+        "audio_source_max_wait_ms": 0,
+        "audio_received_frames": [
+          201,
+          201
+        ],
+        "audio_receive_max_interval_ms": 57,
+        "audio_observation_ms": 4015,
+        "audible_audio_frames": [
+          196,
+          198
+        ],
+        "max_audio_gap_ms": 66,
+        "tone_frequency_hz": 443.2741116751269,
+        "microphone_verified": false,
+        "audio_source": "generated_440hz_pcm",
+        "quality_certified": false,
+        "publisher_transports": [
+          [
+            {
+              "protocol": "udp",
+              "local_candidate_type": "prflx",
+              "remote_candidate_type": "host",
+              "state": "succeeded",
+              "nominated": true,
+              "rtt_ms": 8.0,
+              "bytes_sent": 298909,
+              "bytes_received": 1382
+            }
+          ],
+          [
+            {
+              "protocol": "udp",
+              "local_candidate_type": "host",
+              "remote_candidate_type": "prflx",
+              "state": "succeeded",
+              "nominated": true,
+              "rtt_ms": 1.0,
+              "bytes_sent": 223864,
+              "bytes_received": 207726
+            }
+          ]
+        ],
+        "viewer_transports": [
+          [
+            {
+              "protocol": "udp",
+              "local_candidate_type": "prflx",
+              "remote_candidate_type": "host",
+              "state": "succeeded",
+              "nominated": true,
+              "rtt_ms": 1.0,
+              "bytes_sent": 3119,
+              "bytes_received": 352131
+            }
+          ],
+          [
+            {
+              "protocol": "udp",
+              "local_candidate_type": "prflx",
+              "remote_candidate_type": "host",
+              "state": "succeeded",
+              "nominated": true,
+              "rtt_ms": 1.0,
+              "bytes_sent": 3119,
+              "bytes_received": 352131
+            }
+          ]
+        ],
+        "measurement_context": {
+          "variant": "coupled-baseline",
+          "os": "macOS 27.0.1",
+          "hardware": "Apple M4",
+          "arch": "arm64",
+          "build": "development",
+          "foreground_load_controlled": false,
+          "process_wall_ms": 5819,
+          "process_cpu_ms": 4410
+        }
+      }
+    ],
+    "isolated-workers": [
+      {
+        "submitted_frames": [
+          120,
+          120
+        ],
+        "received_size": [
+          [
+            1280,
+            720
+          ],
+          [
+            1280,
+            720
+          ]
+        ],
+        "requested_profile": "p720_f30",
+        "requested_fps": 30,
+        "frame_age_samples": 117,
+        "invalid_timestamps": 0,
+        "frame_age_p50_ms": 26,
+        "frame_age_p95_ms": 29,
+        "frame_age_max_ms": 84,
+        "encoder": [
+          "VideoToolbox",
+          "VideoToolbox"
+        ],
+        "decoder": [
+          "VideoToolbox",
+          "VideoToolbox"
+        ],
+        "phase_duration_ms": [
+          2003,
+          2003
+        ],
+        "received_frames": [
+          57,
+          60
+        ],
+        "wrong_source_frames": 0,
+        "duration_ms": 4006,
+        "audio_verified": true,
+        "audio_source_calls": 201,
+        "audio_source_max_interval_ms": 23,
+        "audio_source_max_wait_ms": 0,
+        "audio_received_frames": [
+          201,
+          200
+        ],
+        "audio_receive_max_interval_ms": 14,
+        "audio_observation_ms": 4006,
+        "audio_packets_received": 214,
+        "audio_packets_lost": 0,
+        "audio_jitter_ms": 1.0,
+        "audio_concealed_samples": 0,
+        "audio_rtp_stats_scope": "track_cumulative_after_observation",
+        "video_submit_max_us": 3997,
+        "video_frame_prepare_max_us": 2025,
+        "audible_audio_frames": [
+          196,
+          200
+        ],
+        "max_audio_gap_ms": 47,
+        "tone_frequency_hz": 445.5808080808081,
+        "microphone_verified": false,
+        "audio_source": "generated_440hz_pcm",
+        "quality_certified": false,
+        "publisher_transports": [
+          [
+            {
+              "protocol": "udp",
+              "local_candidate_type": "prflx",
+              "remote_candidate_type": "host",
+              "state": "succeeded",
+              "nominated": true,
+              "rtt_ms": 1.0,
+              "bytes_sent": 135741,
+              "bytes_received": 1378
+            }
+          ],
+          [
+            {
+              "protocol": "udp",
+              "local_candidate_type": "prflx",
+              "remote_candidate_type": "host",
+              "state": "succeeded",
+              "nominated": true,
+              "rtt_ms": 3.0,
+              "bytes_sent": 76947,
+              "bytes_received": 1606
+            }
+          ]
+        ],
+        "viewer_transports": [
+          [
+            {
+              "protocol": "udp",
+              "local_candidate_type": "prflx",
+              "remote_candidate_type": "host",
+              "state": "succeeded",
+              "nominated": true,
+              "rtt_ms": 1.0,
+              "bytes_sent": 1920,
+              "bytes_received": 112631
+            }
+          ],
+          [
+            {
+              "protocol": "udp",
+              "local_candidate_type": "prflx",
+              "remote_candidate_type": "host",
+              "state": "succeeded",
+              "nominated": true,
+              "rtt_ms": 1.0,
+              "bytes_sent": 1920,
+              "bytes_received": 112631
+            }
+          ]
+        ],
+        "measurement_context": {
+          "variant": "isolated-workers",
+          "os": "macOS 27.0.1",
+          "hardware": "Apple M4",
+          "arch": "arm64",
+          "build": "development",
+          "foreground_load_controlled": false,
+          "process_wall_ms": 6115,
+          "process_cpu_ms": 2125
+        }
+      },
+      {
+        "submitted_frames": [
+          241,
+          241
+        ],
+        "received_size": [
+          [
+            1920,
+            1080
+          ],
+          [
+            1920,
+            1080
+          ]
+        ],
+        "requested_profile": "p1080_f60",
+        "requested_fps": 60,
+        "frame_age_samples": 238,
+        "invalid_timestamps": 0,
+        "frame_age_p50_ms": 25,
+        "frame_age_p95_ms": 38,
+        "frame_age_max_ms": 41,
+        "encoder": [
+          "VideoToolbox",
+          "VideoToolbox"
+        ],
+        "decoder": [
+          "VideoToolbox",
+          "VideoToolbox"
+        ],
+        "phase_duration_ms": [
+          2004,
+          2003
+        ],
+        "received_frames": [
+          118,
+          120
+        ],
+        "wrong_source_frames": 0,
+        "duration_ms": 4009,
+        "audio_verified": true,
+        "audio_source_calls": 201,
+        "audio_source_max_interval_ms": 23,
+        "audio_source_max_wait_ms": 0,
+        "audio_received_frames": [
+          201,
+          200
+        ],
+        "audio_receive_max_interval_ms": 12,
+        "audio_observation_ms": 4008,
+        "audio_packets_received": 231,
+        "audio_packets_lost": 0,
+        "audio_jitter_ms": 1.0,
+        "audio_concealed_samples": 0,
+        "audio_rtp_stats_scope": "track_cumulative_after_observation",
+        "video_submit_max_us": 4025,
+        "video_frame_prepare_max_us": 3290,
+        "audible_audio_frames": [
+          195,
+          200
+        ],
+        "max_audio_gap_ms": 62,
+        "tone_frequency_hz": 440.126582278481,
+        "microphone_verified": false,
+        "audio_source": "generated_440hz_pcm",
+        "quality_certified": false,
+        "publisher_transports": [
+          [
+            {
+              "protocol": "udp",
+              "local_candidate_type": "host",
+              "remote_candidate_type": "prflx",
+              "state": "succeeded",
+              "nominated": true,
+              "rtt_ms": 0.0,
+              "bytes_sent": 218875,
+              "bytes_received": 513645
+            }
+          ],
+          [
+            {
+              "protocol": "udp",
+              "local_candidate_type": "prflx",
+              "remote_candidate_type": "host",
+              "state": "succeeded",
+              "nominated": true,
+              "rtt_ms": 0.0,
+              "bytes_sent": 569824,
+              "bytes_received": 2204
+            }
+          ]
+        ],
+        "viewer_transports": [
+          [
+            {
+              "protocol": "udp",
+              "local_candidate_type": "prflx",
+              "remote_candidate_type": "host",
+              "state": "succeeded",
+              "nominated": true,
+              "rtt_ms": 1.0,
+              "bytes_sent": 2290,
+              "bytes_received": 670840
+            }
+          ],
+          [
+            {
+              "protocol": "udp",
+              "local_candidate_type": "prflx",
+              "remote_candidate_type": "host",
+              "state": "succeeded",
+              "nominated": true,
+              "rtt_ms": 1.0,
+              "bytes_sent": 2290,
+              "bytes_received": 670840
+            }
+          ]
+        ],
+        "measurement_context": {
+          "variant": "isolated-workers",
+          "os": "macOS 27.0.1",
+          "hardware": "Apple M4",
+          "arch": "arm64",
+          "build": "development",
+          "foreground_load_controlled": false,
+          "process_wall_ms": 5267,
+          "process_cpu_ms": 3024
+        }
+      },
+      {
+        "submitted_frames": [
+          240,
+          240
+        ],
+        "received_size": [
+          [
+            2560,
+            1440
+          ],
+          [
+            2560,
+            1440
+          ]
+        ],
+        "requested_profile": "p1440_f60",
+        "requested_fps": 60,
+        "frame_age_samples": 238,
+        "invalid_timestamps": 0,
+        "frame_age_p50_ms": 34,
+        "frame_age_p95_ms": 60,
+        "frame_age_max_ms": 63,
+        "encoder": [
+          "VideoToolbox",
+          "VideoToolbox"
+        ],
+        "decoder": [
+          "VideoToolbox",
+          "VideoToolbox"
+        ],
+        "phase_duration_ms": [
+          2003,
+          2002
+        ],
+        "received_frames": [
+          119,
+          119
+        ],
+        "wrong_source_frames": 0,
+        "duration_ms": 4006,
+        "audio_verified": true,
+        "audio_source_calls": 201,
+        "audio_source_max_interval_ms": 23,
+        "audio_source_max_wait_ms": 0,
+        "audio_received_frames": [
+          200,
+          201
+        ],
+        "audio_receive_max_interval_ms": 14,
+        "audio_observation_ms": 4006,
+        "audio_packets_received": 255,
+        "audio_packets_lost": 0,
+        "audio_jitter_ms": 1.0,
+        "audio_concealed_samples": 0,
+        "audio_rtp_stats_scope": "track_cumulative_after_observation",
+        "video_submit_max_us": 5613,
+        "video_frame_prepare_max_us": 5183,
+        "audible_audio_frames": [
+          195,
+          201
+        ],
+        "max_audio_gap_ms": 56,
+        "tone_frequency_hz": 440.90909090909093,
+        "microphone_verified": false,
+        "audio_source": "generated_440hz_pcm",
+        "quality_certified": false,
+        "publisher_transports": [
+          [
+            {
+              "protocol": "udp",
+              "local_candidate_type": "prflx",
+              "remote_candidate_type": "host",
+              "state": "succeeded",
+              "nominated": true,
+              "rtt_ms": 1.0,
+              "bytes_sent": 277293,
+              "bytes_received": 1259
+            }
+          ],
+          [
+            {
+              "protocol": "udp",
+              "local_candidate_type": "prflx",
+              "remote_candidate_type": "host",
+              "state": "succeeded",
+              "nominated": true,
+              "rtt_ms": 1.0,
+              "bytes_sent": 231546,
+              "bytes_received": 1974
+            }
+          ]
+        ],
+        "viewer_transports": [
+          [
+            {
+              "protocol": "udp",
+              "local_candidate_type": "prflx",
+              "remote_candidate_type": "host",
+              "state": "succeeded",
+              "nominated": true,
+              "rtt_ms": 1.0,
+              "bytes_sent": 3254,
+              "bytes_received": 334119
+            }
+          ],
+          [
+            {
+              "protocol": "udp",
+              "local_candidate_type": "prflx",
+              "remote_candidate_type": "host",
+              "state": "succeeded",
+              "nominated": true,
+              "rtt_ms": 1.0,
+              "bytes_sent": 3254,
+              "bytes_received": 334119
+            }
+          ]
+        ],
+        "measurement_context": {
+          "variant": "isolated-workers",
+          "os": "macOS 27.0.1",
+          "hardware": "Apple M4",
+          "arch": "arm64",
+          "build": "development",
+          "foreground_load_controlled": false,
+          "process_wall_ms": 5763,
+          "process_cpu_ms": 4001
+        }
+      }
+    ]
+  },
+  "limitations": [
+    "Foreground load uncontrolled; one short CLI sample per profile/variant. No statistical performance improvement claim.",
+    "CLI uses a multithread Tokio runtime; original high-profile integration test uses current-thread Tokio and is verified by full live suite separately.",
+    "500ms async capture timeout cannot preempt a synchronous native SDK call. Separate worker protects receiver polling but does not guarantee source delivery under arbitrary resource starvation.",
+    "No physical microphone, screen capture, speaker, sustained high-profile quality or GPUI presentation certification. quality_certified remains false."
+  ],
+  "verification": {
+    "deterministic_rust_passed": 50,
+    "live_sfu_passed": 18,
+    "python_passed": 11,
+    "original_regression": "requested_high_profiles_reach_the_decoder_at_the_requested_dimensions passed unchanged in full live suite (current-thread Tokio)",
+    "live_tests": [
+      "rejected_token_is_distinct_from_transport_failure",
+      "reachable_signaling_with_unreachable_media_fails_with_a_bounded_diagnostic",
+      "relay_required_without_turn_cannot_silently_use_the_direct_udp_path",
+      "valid_token_joins_and_leaves_self_hosted_room",
+      "generated_opus_crosses_the_same_pipeline_without_claiming_microphone_access",
+      "stopped_audio_probe_cancels_before_the_requested_end",
+      "stopped_preview_cancels_a_running_media_session",
+      "decoded_frames_are_delivered_to_preview",
+      "required_relay_media_refuses_the_available_direct_route_without_turn",
+      "supplied_capture_frames_cross_the_sfu_instead_of_the_generated_pattern",
+      "viewer_join_failure_reports_stage_and_rejection",
+      "required_relay_carries_h264_on_both_publisher_and_viewer_paths",
+      "unrelated_room_video_is_not_mistaken_for_this_publish",
+      "native_h264_frames_cross_the_sfu_and_decode_with_correct_colors",
+      "requested_high_profiles_reach_the_decoder_at_the_requested_dimensions",
+      "profile_preview_forwards_both_focused_publishers_to_the_ui_channel",
+      "stopping_a_profile_preview_cancels_its_owned_rooms",
+      "two_publishers_keep_sending_while_viewer_switches_focus"
+    ],
+    "format_clippy_shell_diff": "passed; clippy all targets/features with -D warnings; unchanged upstream future compatibility notices",
+    "independent_review": "No actionable findings; finite stalls verified, permanently blocked native SDK calls remain unpreemptible.",
+    "protected_app_bundles": "Media Lab, Audio Lab, Speaker Lab matched saved SHA256 manifests",
+    "ci": "manual-only workflow; not dispatched"
+  }
+}

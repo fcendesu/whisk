@@ -279,7 +279,8 @@ Upstream references: [pinned SDK source](https://docs.rs/crate/livekit/0.9.7/sou
 
 The `--switch` probe now publishes a generated 440 Hz mono PCM tone from publisher
 one and keeps its native audio decoder across both viewer focus phases. Audio
-feeding and observation run on a separate worker from CPU video conversion. The
+feeding and observation run on separate workers from each other and from CPU video
+conversion. The
 report counts non-silent decoded frames in each phase, checks tone frequency,
 and includes startup, inter-frame and trailing silence in a 250 ms continuity
 budget. `audio_verified` refers only to this generated PCM receive test;
@@ -749,3 +750,53 @@ complete 18-test live runs. After strengthening the no-TURN assertion, its focus
 valid-token test passed and a deliberately invalid publisher token made that
 assertion fail as intended. Independent scoped review found no remaining issues.
 Protected Media, Audio and Speaker app-bundle hashes are unchanged.
+
+
+## Generated-audio receive isolation — 2026-10-26
+
+[Issue #23](https://github.com/fcendesu/whisk/issues/23) exposed an additional
+coupling inside the audio worker: awaiting source submission in the same loop as
+receive polling stalls observation during asynchronous source backpressure or a
+synchronous native call. Controlled 350 ms delays produced 704 ms and 356 ms
+receive gaps respectively in the old loop. A dedicated source worker now feeds
+one frame at a time while receive polling stays independent; both tests pass with
+400 ms injected waits and the unchanged strict `<250 ms` continuity criterion.
+Source failure and receive-end tests check error propagation and source shutdown.
+The existing default SDK receive queue remains bounded to ten decoded frames;
+source buffering, video selection, fallback policy and certification flags are unchanged.
+
+The [counter-only comparison](results/2026-10-26-macos-arm64-audio-isolation.json)
+records before/after native trials for all three requested profiles. Baseline
+720p30 / 1080p60 / 1440p60 audible gaps were 61 / 61 / 66 ms; isolated-worker
+trials measured 47 / 62 / 56 ms. These are individual four-second CLI samples on
+macOS 27.0.1 / Apple M4, development build, with uncontrolled foreground load.
+They establish live compatibility, not a statistical speedup or reproduction of
+the historical 648 ms failure. The original sample lacked source timings, so its
+unique cause remains unproven. The controlled regression establishes why source
+completion must not block receive polling.
+
+Reports now expose source call count, maximum start interval and completion wait;
+all decoded PCM counts and receive intervals alongside audible continuity; and
+receive observation duration. Source counters include final in-flight cleanup,
+whereas receive observation ends before cleanup. Optional audio RTP packet/loss,
+jitter and concealment counters are cumulative track snapshots collected after
+observation, not deltas over that window; unavailable values are null. Receive
+intervals measure application polling, not network packet arrival or isolated
+native decoder time. The SDK does not expose a dropped decoded-frame counter.
+Video counters measure maximum wall time for both-source stamping/conversion/
+submission and for decoded I420-to-BGRA preparation; they exclude GPU presentation.
+
+Stopping receive monitoring signals the source and joins its in-flight call;
+source errors cannot certify an otherwise healthy incoming stream. The existing
+500 ms asynchronous capture timeout cannot preempt a synchronous native SDK call.
+Separate workers protect receive polling, but arbitrary source starvation can
+still interrupt generated audio and must fail the same continuity budget.
+Physical microphone continuity (#13), sustained capture/GPUI measurements (#14),
+permission/device recovery (#15) and M0 acceptance (#16) remain separate gates.
+
+Verification for this change: 50 deterministic Rust tests, all 18 explicit local-SFU
+tests (including the original high-profile regression, focus cancellation, direct
+and TURN paths), and 11 Python tests passed. Formatting, clippy across all targets
+and features with warnings denied, shell syntax and diff checks passed. Independent
+review found no actionable defects. The saved Media Lab, Audio Lab and Speaker Lab
+bundle hashes matched; no signed app was rebuilt and CI was not dispatched.
