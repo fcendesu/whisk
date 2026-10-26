@@ -11,3 +11,5 @@ pub mod transport;
 pub mod ui_metrics;
 
 pub mod microphone;
+
+pub mod capture_benchmark;

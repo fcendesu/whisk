@@ -874,3 +874,77 @@ with `--reuse-build` refreshed credentials without rebuilding or re-signing. Sta
 within two minutes of launch; if credentials expire while waiting, quit and reuse
 the same build again. The successful short physical run completes #13; sustained
 actual-capture/GPUI proof (#14), recovery (#15) and M0 acceptance (#16) remain open.
+
+## Sustained selected-window Capture Lab — implementation pending measurements
+
+[Issue #14](https://github.com/fcendesu/whisk/issues/14) adds a separate
+`dev.whisk.capture-lab` bundle and an owned animated test window. Existing granted
+Media/Audio/Speaker/Focus bundles remain unchanged. Capture Lab opens idle and
+needs its own explicit macOS Screen & System Audio Recording opt-in. No microphone
+or system audio is captured. After granting access, close either lab window to
+quit both, then reuse the frozen build with fresh fixture credentials:
+
+```sh
+./scripts/run-capture-lab.sh                       # build once; idle permission setup
+./scripts/run-capture-lab.sh --reuse-build 720p30 600
+./scripts/run-capture-lab.sh --reuse-build 1080p60 600
+./scripts/run-capture-lab.sh --reuse-build 1440p60 600
+```
+
+Each launch has its own result directory under `target/capture-benchmark/`; the
+latest path is in `latest-result-dir`. Discover and explicitly select **Whisk
+capture test window**, then click **Publish selected window**. Discovery and start
+both verify the window title and current-process owner; displays and unrelated
+windows are excluded. The test window animates independently; keep it visible
+and unminimized. Its logical size is 1000×600, so requested higher-resolution
+capture may scale that source. Output dimensions must be read from the reports.
+Publication accepts only the local loopback fixture and never substitutes a
+generated source if capture fails. Only one publish attempt is allowed per launch;
+close and relaunch for another attempt, preserving results and signing identity.
+Fixture tokens expire after two minutes, so relaunch after lengthy permission
+setup rather than rebuilding. Connected ten-minute observations do not need a
+new token halfway through.
+
+Reports preserve distinct scopes:
+
+- `capture-stats.json`: ScreenCaptureKit callbacks, complete callbacks, copied
+  BGRA frames/bytes and last captured dimensions over the native stream lifetime,
+  including source setup and stop. This window can exceed the network observation.
+  Native queue depth **requested** is two; actual framework drops are unknown.
+  The latest-frame handoff holds one and the application renderer queue holds two.
+- `measurement.json`: successful publish/decode observation duration, accepted
+  submissions, SDK-declined submissions, decoded frames/dimensions, codec path,
+  BGRA/I420 conversion calls and decoded BGRA bytes. These conversion counts do
+  not include every SDK/driver/GPU copy. A declined SDK submission is not a
+  network packet-loss measurement.
+- `ui-metrics.json`: CPU-prepared frames, copied BGRA bytes, preparation p95,
+  queue depth and view-tree builds in the UI window. That window includes media
+  connection setup/cleanup and differs from decoder observation. It measures
+  CPU image preparation, not GPU presentation.
+- `started.json` / `outcome.json`: publish-phase and terminal wall timestamps,
+  requested settings, success or sanitized failure. A failed network attempt
+  has unavailable partial network counters explicitly null; available capture/UI
+  counters remain scoped separately. Source setup failures and process closure
+  are retained, and failed runs must not be treated as completed measurements.
+- `process-samples.jsonl`: one-second numeric RSS and `ps` CPU samples for this
+  app process, including the owned animation, native capture/publisher/decoder
+  and GPUI. The SFU/container and other processes are excluded. `ps` CPU percent
+  is a process-lifetime average, not interval or codec-only CPU. Sampling starts
+  at the explicit publish phase; idle waiting does not consume its 900-second
+  observation budget (idle wait is separately bounded to 1800 seconds).
+- `environment.json`: OS/hardware, build, profile/duration and measurement scope.
+  Whole-system or attributable GPU utilization, GPU-presented FPS and
+  capture-to-display latency remain null/unmeasured. Quality stays uncertified.
+
+Review found missing structured failure outcomes and a sampler budget starting
+at app launch; both were repaired. Regression checks first failed for terminal
+failure detection and idle-budget accounting, then passed. The first full live
+run also exposed an incorrect test assumption that every converted frame is
+accepted by the SDK (50 conversions / 49 submissions). Reports now retain the
+SDK-declined count; no continuity or profile threshold was relaxed.
+
+Implementation checks: 62 deterministic Rust, 19 explicit live SFU and 15 Python
+tests pass, plus formatting, clippy across all targets/features with warnings
+denied, shell syntax and diff checks. Live high-profile capture-input tests use
+injected fixture frames and do not grant screen access. Actual ten-minute 720p30,
+1080p60 and 1440p60 selected-window/GPUI records are still pending; #14 remains open.

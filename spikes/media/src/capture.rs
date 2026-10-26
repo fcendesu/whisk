@@ -53,7 +53,64 @@ pub enum FrameEvent {
     Finished(String),
 }
 
+#[derive(Default)]
+pub struct CaptureCounters {
+    callbacks: std::sync::atomic::AtomicU64,
+    complete: std::sync::atomic::AtomicU64,
+    copied: std::sync::atomic::AtomicU64,
+    bytes: std::sync::atomic::AtomicU64,
+    size: std::sync::atomic::AtomicU64,
+}
+#[derive(Serialize)]
+pub struct CaptureSnapshot {
+    pub screen_callbacks: u64,
+    pub complete_callbacks: u64,
+    pub copied_frames: u64,
+    pub bgra_bytes_copied: u64,
+    pub lifetime_ms: u64,
+    pub native_queue_depth_requested: usize,
+    pub last_captured_size: [u32; 2],
+    pub latest_frame_capacity: usize,
+    pub capture_drop_count: Option<u64>,
+}
+impl CaptureCounters {
+    pub fn callback(&self, complete: bool) {
+        use std::sync::atomic::Ordering::Relaxed;
+        self.callbacks.fetch_add(1, Relaxed);
+        if complete {
+            self.complete.fetch_add(1, Relaxed);
+        }
+    }
+    pub fn copied(&self, width: u32, height: u32, bytes: usize) {
+        self.size.store(
+            ((width as u64) << 32) | height as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        use std::sync::atomic::Ordering::Relaxed;
+        self.copied.fetch_add(1, Relaxed);
+        self.bytes.fetch_add(bytes as u64, Relaxed);
+    }
+    pub fn snapshot(&self, lifetime_ms: u64) -> CaptureSnapshot {
+        use std::sync::atomic::Ordering::Relaxed;
+        CaptureSnapshot {
+            screen_callbacks: self.callbacks.load(Relaxed),
+            complete_callbacks: self.complete.load(Relaxed),
+            copied_frames: self.copied.load(Relaxed),
+            bgra_bytes_copied: self.bytes.load(Relaxed),
+            lifetime_ms,
+            native_queue_depth_requested: 2,
+            last_captured_size: [
+                (self.size.load(Relaxed) >> 32) as u32,
+                self.size.load(Relaxed) as u32,
+            ],
+            latest_frame_capacity: 1,
+            capture_drop_count: None,
+        }
+    }
+}
 pub struct FrameStream {
+    pub counters: Arc<CaptureCounters>,
+    pub started: std::time::Instant,
     pub frames: watch::Receiver<FrameEvent>,
     #[cfg(target_os = "macos")]
     native: screencapturekit::stream::sc_stream::SCStream,
@@ -191,5 +248,49 @@ pub fn next_frame_event(receiver: &mut watch::Receiver<FrameEvent>) -> Option<Fr
             terminal @ (FrameEvent::Finished(_) | FrameEvent::Error(_)) => Some(terminal),
             _ => Some(FrameEvent::Error(CaptureError::Backend)),
         },
+    }
+}
+
+/// Experimental profile; original default API remains720p30. Permission preflight precedes start.
+pub fn open_source_profile(
+    id: SourceId,
+    run: crate::capture_benchmark::CaptureRun,
+) -> Result<FrameStream, CaptureError> {
+    NativeCapture.permission()?;
+    #[cfg(target_os = "macos")]
+    {
+        macos::start_profile(id, run)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (id, run);
+        Err(CaptureError::UnsupportedPlatform)
+    }
+}
+
+pub fn available_owned_test_sources() -> Result<Vec<CaptureSource>, CaptureError> {
+    NativeCapture.permission()?;
+    #[cfg(target_os = "macos")]
+    {
+        macos::owned_sources()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err(CaptureError::UnsupportedPlatform)
+    }
+}
+pub fn open_owned_test_source(
+    id: SourceId,
+    run: crate::capture_benchmark::CaptureRun,
+) -> Result<FrameStream, CaptureError> {
+    NativeCapture.permission()?;
+    #[cfg(target_os = "macos")]
+    {
+        macos::start_owned_profile(id, run)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (id, run);
+        Err(CaptureError::UnsupportedPlatform)
     }
 }

@@ -20,7 +20,13 @@ use std::time::Duration;
 use tokio::time::{Instant, MissedTickBehavior, interval, sleep_until, timeout};
 #[derive(Debug, Serialize)]
 pub struct LoopbackReport {
+    pub requested_profile: crate::codec::VideoProfile,
+    pub capture_input: bool,
+    pub bgra_to_i420_calls: u64,
+    pub i420_to_bgra_calls: u64,
+    pub decoded_bgra_bytes: u64,
     pub submitted_frames: u64,
+    pub source_rejected_frames: u64,
     pub decoded_frames: u64,
     pub received_width: u32,
     pub received_height: u32,
@@ -84,9 +90,19 @@ pub async fn run_loopback_with_policy(
         duration,
         None,
         None,
-        policy,
+        MediaMode {
+            policy,
+            profile: crate::codec::VideoProfile::P720F30,
+            extended_capture: false,
+        },
     )
     .await
+}
+
+struct MediaMode {
+    policy: IcePolicy,
+    profile: crate::codec::VideoProfile,
+    extended_capture: bool,
 }
 
 async fn run_internal(
@@ -96,13 +112,23 @@ async fn run_internal(
     duration: Duration,
     target: Option<PreviewTarget>,
     mut input: Option<tokio::sync::watch::Receiver<crate::capture::FrameEvent>>,
-    policy: IcePolicy,
+    mode: MediaMode,
 ) -> Result<LoopbackReport, MediaError> {
+    let MediaMode {
+        policy,
+        profile,
+        extended_capture,
+    } = mode;
     if target.as_ref().is_some_and(PreviewTarget::cancelled) {
         return Err(MediaError::Cancelled);
     }
     if duration.is_zero()
-        || duration > Duration::from_secs(60)
+        || duration
+            > Duration::from_secs(if extended_capture && input.is_some() {
+                600
+            } else {
+                60
+            })
         || publisher_token.trim().is_empty()
         || viewer_token.trim().is_empty()
     {
@@ -134,7 +160,15 @@ async fn run_internal(
             return Err(error);
         }
     };
-    let result = pipeline(&publisher, &mut viewer, duration, target.as_ref(), input).await;
+    let result = pipeline(
+        &publisher,
+        &mut viewer,
+        duration,
+        target.as_ref(),
+        input,
+        profile,
+    )
+    .await;
     let publisher_closed = publisher.close().await;
     let viewer_closed = viewer.close().await;
     let report = result?;
@@ -149,14 +183,14 @@ async fn pipeline(
     duration: Duration,
     target: Option<&PreviewTarget>,
     mut input: Option<tokio::sync::watch::Receiver<crate::capture::FrameEvent>>,
+    profile: crate::codec::VideoProfile,
 ) -> Result<LoopbackReport, MediaError> {
-    let source = NativeVideoSource::new(
-        VideoResolution {
-            width: 1280,
-            height: 720,
-        },
-        true,
-    );
+    let (width, height, fps, bitrate) = crate::capture_benchmark::CaptureRun {
+        profile,
+        seconds: duration.as_secs(),
+    }
+    .settings();
+    let source = NativeVideoSource::new(VideoResolution { width, height }, true);
     let track = LocalVideoTrack::create_video_track(
         if input.is_some() {
             "whisk-m0-selected-window"
@@ -174,8 +208,8 @@ async fn pipeline(
                 video_codec: VideoCodec::H264,
                 simulcast: false,
                 video_encoding: Some(VideoEncoding {
-                    max_bitrate: 2_000_000,
-                    max_framerate: 30.0,
+                    max_bitrate: bitrate,
+                    max_framerate: fps as f64,
                 }),
                 ..Default::default()
             },
@@ -205,22 +239,24 @@ async fn pipeline(
         // Warm orange with deliberately distinct B/G/R values: catches channel-order bugs.
         let bgra: Vec<u8> = [40, 140, 230, 255].into_iter().cycle().take(1280 * 720 * 4).collect();
         let pattern = BgraFrame { width: 1280, height: 720, bgra: bgra.into() };
-        let mut report = LoopbackReport { submitted_frames:0, decoded_frames:0, received_width:0, received_height:0, last_pixel_bgra:[0;4], codec:None, encoder:None, decoder:None, duration_ms:0, high_quality_certified:false, publisher_transports:Vec::new(),viewer_transports:Vec::new() };
+        let mut report = LoopbackReport { requested_profile:profile,capture_input:input.is_some(),bgra_to_i420_calls:0,i420_to_bgra_calls:0,decoded_bgra_bytes:0,submitted_frames:0,source_rejected_frames:0, decoded_frames:0, received_width:0, received_height:0, last_pixel_bgra:[0;4], codec:None, encoder:None, decoder:None, duration_ms:0, high_quality_certified:false, publisher_transports:Vec::new(),viewer_transports:Vec::new() };
         let captured = input.is_some();
         loop {
             tokio::select! {
                 _ = sleep_until(end) => break,
                 _ = wait_cancelled(target) => return Err(MediaError::Cancelled),
                 _ = ticks.tick(), if !captured => {
+                    report.bgra_to_i420_calls+=1;
                     let buffer = bgra_to_i420(&pattern)?;
                     let frame = VideoFrame { rotation: VideoRotation::VideoRotation0, timestamp_us: started.elapsed().as_micros().min(i64::MAX as u128) as i64, frame_metadata:None, buffer };
-                    if source.capture_frame(&frame) { report.submitted_frames += 1; }
+                    if source.capture_frame(&frame) { report.submitted_frames += 1; }else{report.source_rejected_frames+=1;}
                 }
                 capture = next_capture_frame(&mut input), if captured => {
                     let captured_frame = capture?;
+                    report.bgra_to_i420_calls+=1;
                     let buffer = bgra_to_i420(&captured_frame)?;
                     let frame = VideoFrame { rotation: VideoRotation::VideoRotation0, timestamp_us: started.elapsed().as_micros().min(i64::MAX as u128) as i64, frame_metadata:None, buffer };
-                    if source.capture_frame(&frame) { report.submitted_frames += 1; }
+                    if source.capture_frame(&frame) { report.submitted_frames += 1; }else{report.source_rejected_frames+=1;}
                 }
                 event = viewer.next_event() => {
                     match event {
@@ -232,6 +268,7 @@ async fn pipeline(
                 frame = stream.next() => {
                     let frame = frame.ok_or(MediaError::Decode)?;
                     let bgra = decoded_bgra(&frame)?;
+                    report.i420_to_bgra_calls+=1;report.decoded_bgra_bytes+=bgra.bgra.len() as u64;
                     let pixel: [u8; 4] = bgra.bgra[..4].try_into().map_err(|_| MediaError::Decode)?;
                     // Exclude SDK-generated black keepalive frames from our proof.
                     if !captured && pixel[..3].iter().all(|value| *value < 15) { continue; }
@@ -359,7 +396,11 @@ pub async fn run_loopback_preview(
         duration,
         Some(target),
         None,
-        IcePolicy::All,
+        MediaMode {
+            policy: IcePolicy::All,
+            profile: crate::codec::VideoProfile::P720F30,
+            extended_capture: false,
+        },
     )
     .await
 }
@@ -397,7 +438,11 @@ pub async fn run_capture_preview(
         duration,
         Some(target),
         Some(input),
-        IcePolicy::All,
+        MediaMode {
+            policy: IcePolicy::All,
+            profile: crate::codec::VideoProfile::P720F30,
+            extended_capture: false,
+        },
     )
     .await
 }
@@ -418,4 +463,29 @@ async fn next_capture_frame(
             FrameEvent::Error(_) | FrameEvent::Finished(_) => return Err(MediaError::Capture),
         }
     }
+}
+
+/// Explicit selected-window profile experiment; no generated fallback, max600s.
+pub async fn run_capture_profile_preview(
+    url: &str,
+    publisher: &str,
+    viewer: &str,
+    run: crate::capture_benchmark::CaptureRun,
+    input: tokio::sync::watch::Receiver<crate::capture::FrameEvent>,
+    target: PreviewTarget,
+) -> Result<LoopbackReport, MediaError> {
+    run_internal(
+        url,
+        publisher,
+        viewer,
+        Duration::from_secs(run.seconds),
+        Some(target),
+        Some(input),
+        MediaMode {
+            policy: IcePolicy::All,
+            profile: run.profile,
+            extended_capture: true,
+        },
+    )
+    .await
 }

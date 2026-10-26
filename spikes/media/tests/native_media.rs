@@ -397,3 +397,67 @@ async fn viewer_join_failure_reports_stage_and_rejection() {
     assert_eq!(json["cause"]["kind"], "rejected", "{json}");
     assert!(!json.to_string().contains("private-invalid-viewer-token"));
 }
+
+#[tokio::test]
+#[ignore = "requires local SFU; injected fixture frames, never physical capture"]
+async fn captured_profile_path_keeps_requested_dimensions_without_generated_fallback() {
+    use media_spike::{
+        capture::{FrameEvent, VideoFrame, frame_channel},
+        capture_benchmark::CaptureRun,
+        loopback::{PreviewTarget, run_capture_profile_preview},
+    };
+    use std::{
+        sync::{Arc, atomic::AtomicU64},
+        time::Duration,
+    };
+    let _lock = MEDIA_TEST_LOCK.lock().await;
+    for (name, width, height) in [("1080p60", 1920u32, 1080u32), ("1440p60", 2560, 1440)] {
+        let (input, receiver) = frame_channel();
+        let (frames, _) = frame_channel();
+        let target = PreviewTarget {
+            frames,
+            generation: Arc::new(AtomicU64::new(1)),
+            session: 1,
+        };
+        let fixture = Arc::new(VideoFrame {
+            width,
+            height,
+            bgra: [230, 120, 40, 255]
+                .into_iter()
+                .cycle()
+                .take(width as usize * height as usize * 4)
+                .collect::<Vec<_>>()
+                .into(),
+        });
+        let feeder = tokio::spawn(async move {
+            loop {
+                input.send(FrameEvent::Frame(fixture.clone()));
+                tokio::time::sleep(Duration::from_millis(17)).await;
+            }
+        });
+        let result = run_capture_profile_preview(
+            &env::var("LIVEKIT_URL").unwrap(),
+            &env::var("LIVEKIT_PUBLISH_TOKEN").unwrap(),
+            &env::var("LIVEKIT_TOKEN").unwrap(),
+            CaptureRun::new(name, 1).unwrap(),
+            receiver,
+            target,
+        )
+        .await;
+        feeder.abort();
+        let report = result.expect("profile fixture relay failed");
+        assert!(report.capture_input);
+        assert_eq!(
+            (report.received_width, report.received_height),
+            (width, height),
+            "{report:?}"
+        );
+        assert!(report.decoded_frames > 0 && report.submitted_frames > 0);
+        assert!(!report.high_quality_certified);
+        assert_eq!(
+            report.bgra_to_i420_calls,
+            report.submitted_frames + report.source_rejected_frames
+        );
+        assert!(report.i420_to_bgra_calls >= report.decoded_frames);
+    }
+}

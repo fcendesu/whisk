@@ -1,4 +1,4 @@
-//! M0 native local-preview shell, not the production messaging client.
+// M0 native local-preview shell, not the production messaging client.
 mod desktop_worker;
 use desktop_worker::{Command, Event, Worker};
 use gpui::{img, prelude::*, *};
@@ -23,6 +23,7 @@ struct MediaLab {
     selected: Option<SourceId>,
     metrics: Option<(Instant, media_spike::ui_metrics::UiFrameMetrics)>,
     stats_status: String,
+    benchmark_attempted: bool,
 }
 impl MediaLab {
     fn new(cx: &mut Context<Self>) -> Self {
@@ -52,10 +53,11 @@ impl MediaLab {
             frames: None,
             queue: FrameQueue::default(),
             preview: None,
-            status: "Ready. Discover a source or render the test pattern.".into(),
+            status: if desktop_worker::benchmark_mode(){"Capture Lab idle. Enable this app’s screen access, then discover the owned test window."}else{"Ready. Discover a source or render the test pattern."}.into(),
             selected: None,
             metrics: None,
             stats_status: String::new(),
+            benchmark_attempted: false,
         }
     }
     fn poll(&mut self, cx: &mut Context<Self>) {
@@ -91,8 +93,11 @@ impl MediaLab {
                             Instant::now(),
                             media_spike::ui_metrics::UiFrameMetrics::new("local_capture"),
                         ));
-                        self.status =
-                            "Local preview active · 720p30 requested · Not broadcasting".into();
+                        self.status = if desktop_worker::benchmark_mode() {
+                            format!("Local preview · {} · not publishing", capture_description())
+                        } else {
+                            "Local preview active · 720p30 requested · Not broadcasting".into()
+                        };
                     }
                     Err(error) => {
                         self.status = error;
@@ -112,7 +117,11 @@ impl MediaLab {
                         }),
                     ));
                     self.status = if captured {
-                        "Publishing selected window → H.264 → configured SFU → native decode → GPUI. Stops after 30 seconds.".into()
+                        if desktop_worker::benchmark_mode() {
+                            capture_description()
+                        } else {
+                            "Publishing selected window → H.264 → configured SFU → native decode → GPUI. Stops after 30 seconds.".into()
+                        }
                     } else if let Ok(profile) = std::env::var("WHISK_MEDIA_PROFILE") {
                         format!(
                             "Experimental {profile} target · two generated publishers · automatic focus switch · generated audio counters only · not certified."
@@ -175,7 +184,13 @@ impl MediaLab {
             self.stats_status = "UI measurement path unavailable.".into();
             return;
         };
-        let path = media_spike::ui_metrics::measurement_path(&exe);
+        let path = if desktop_worker::benchmark_mode() {
+            std::env::var("WHISK_CAPTURE_UI_REPORT_PATH")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|_| media_spike::ui_metrics::measurement_path(&exe))
+        } else {
+            media_spike::ui_metrics::measurement_path(&exe)
+        };
         let report = metrics.finish(started.elapsed().as_millis() as u64);
         self.stats_status = if self
             .worker
@@ -198,6 +213,11 @@ impl MediaLab {
         cx.notify();
     }
     fn refresh(&mut self, cx: &mut Context<Self>) {
+        if desktop_worker::benchmark_mode() && self.benchmark_attempted {
+            self.status="This attempt is saved. Close and relaunch Capture Lab for fresh credentials and a new result directory.".into();
+            cx.notify();
+            return;
+        }
         self.clear_preview(cx);
         self.selected = None;
         let id = self.worker.next_generation();
@@ -210,6 +230,11 @@ impl MediaLab {
         cx.notify();
     }
     fn start(&mut self, source: SourceId, cx: &mut Context<Self>) {
+        if desktop_worker::benchmark_mode() && self.benchmark_attempted {
+            self.status="This attempt is saved. Close and relaunch Capture Lab for fresh credentials and a new result directory.".into();
+            cx.notify();
+            return;
+        }
         let id = self.worker.next_generation();
         self.clear_preview(cx);
         self.selected = Some(source);
@@ -244,6 +269,11 @@ impl MediaLab {
         cx.notify();
     }
     fn publish_selected(&mut self, cx: &mut Context<Self>) {
+        if desktop_worker::benchmark_mode() && self.benchmark_attempted {
+            self.status="This attempt is saved. Close and relaunch Capture Lab for fresh credentials and a new result directory.".into();
+            cx.notify();
+            return;
+        }
         let Some(source @ SourceId::Window(_)) = self.selected else {
             self.status =
                 "Select a window for local preview first, then click Publish selected window."
@@ -259,7 +289,8 @@ impl MediaLab {
             .try_send(Command::Loopback(id, Some(source)))
             .is_ok()
         {
-            "Opening selected window for a 30-second publish/decode test…"
+            self.benchmark_attempted = desktop_worker::benchmark_mode();
+            "Opening selected window for the configured publish/decode observation…"
         } else {
             "Media worker is busy. Retry shortly."
         }
@@ -334,7 +365,7 @@ impl Render for MediaLab {
                 .child(div().rounded_lg().bg(rgb(0xf8b869)).text_color(rgb(0x25201a)).p_3().child("M0")))
             .child(div().w(px(260.)).flex_shrink_0().h_full().flex().flex_col().bg(rgb(0x1d222a)).p_5().gap_4()
                 .child(div().text_xl().font_weight(FontWeight::BOLD).child("Whisk"))
-                .child(div().text_sm().text_color(rgb(0x8e98a7)).child("NATIVE MEDIA LAB"))
+                .child(div().text_sm().text_color(rgb(0x8e98a7)).child(if desktop_worker::benchmark_mode(){"CAPTURE LAB"}else{"NATIVE MEDIA LAB"}))
                 .child(div().id("discover").rounded_md().p_3().bg(rgb(0x303945)).cursor_pointer().child("Refresh sources").on_click(cx.listener(|this, _, _, cx| this.refresh(cx))))
                 .child(div().id("sources").flex_1().overflow_y_scroll().flex().flex_col().gap_2()
                     .children(self.sources.iter().enumerate().map(|(index, source)| {
@@ -343,11 +374,11 @@ impl Render for MediaLab {
                             .bg(rgb(if self.selected == Some(id) { 0x48513e } else { 0x262d37 }))
                             .child(source.label.clone()).on_click(cx.listener(move |this, _, _, cx| this.start(id, cx)))
                     })))
-                .child(div().text_xs().text_color(rgb(0x8e98a7)).child("Selecting a source opens a local preview. Publish selected window sends that window to your configured SFU for 30 seconds.")))
+                .child(div().text_xs().text_color(rgb(0x8e98a7)).child(if desktop_worker::benchmark_mode(){capture_description()}else{"Selecting a source opens a local preview. Publish selected window sends that window to your configured SFU for 30 seconds.".into()})))
             .child(div().flex_1().min_w_0().h_full().flex().flex_col().p_6().gap_5()
                 .child(div().flex().items_center().justify_between()
                     .child(div().text_lg().font_weight(FontWeight::SEMIBOLD).child("Screen preview"))
-                    .child(div().rounded_md().px_3().py_1().bg(rgb(0x28372f)).text_sm().text_color(rgb(0xa4cfaa)).child("MEDIA LAB")))
+                    .child(div().rounded_md().px_3().py_1().bg(rgb(0x28372f)).text_sm().text_color(rgb(0xa4cfaa)).child(if desktop_worker::benchmark_mode(){"CAPTURE LAB"}else{"MEDIA LAB"})))
                 .child(div().relative().w_full().min_w_0().flex_1().min_h_0().rounded_xl().bg(rgb(0x0e1116)).overflow_hidden().flex().items_center().justify_center()
                     .when_some(self.preview.clone(), |view, image| view.child(img(image).absolute().size_full().object_fit(ObjectFit::Contain)))
                     .when(self.preview.is_none(), |view| view.child(div().flex().flex_col().gap_3().items_center()
@@ -355,8 +386,8 @@ impl Render for MediaLab {
                         .child(div().text_sm().text_color(rgb(0x8e98a7)).child("Start by testing the native video surface.")))))
                 .child(div().w_full().min_w_0().text_sm().text_color(rgb(0xb1bac7)).child(self.status.clone()))
                 .child(div().flex().flex_wrap().gap_3()
-                    .child(div().id("test-pattern").rounded_md().px_4().py_3().bg(rgb(0xf8b869)).text_color(rgb(0x25201a)).cursor_pointer().child("Test video surface").on_click(cx.listener(|this, _, _, cx| this.pattern(cx))))
-                    .child(div().id("network").rounded_md().px_4().py_3().bg(rgb(0x303945)).cursor_pointer().child("Test network video").on_click(cx.listener(|this, _, _, cx| this.network(cx))))
+                    .when(!desktop_worker::benchmark_mode(),|view|view.child(div().id("test-pattern").rounded_md().px_4().py_3().bg(rgb(0xf8b869)).text_color(rgb(0x25201a)).cursor_pointer().child("Test video surface").on_click(cx.listener(|this, _, _, cx| this.pattern(cx))))
+                    .child(div().id("network").rounded_md().px_4().py_3().bg(rgb(0x303945)).cursor_pointer().child("Test network video").on_click(cx.listener(|this, _, _, cx| this.network(cx)))))
                     .child(div().id("publish-selected").rounded_md().px_4().py_3().bg(rgb(0x48513e)).cursor_pointer().child("Publish selected window").on_click(cx.listener(|this, _, _, cx| this.publish_selected(cx))))
                     .child(div().id("stop").rounded_md().px_4().py_3().bg(rgb(0x303945)).cursor_pointer().child("Stop preview").on_click(cx.listener(|this, _, _, cx| this.stop(cx)))))
                 .child(div().text_xs().text_color(rgb(0x8e98a7)).child(if self.stats_status.is_empty() {"Stop preview saves UI metrics. Wait for save confirmation before closing.".into()} else {self.stats_status.clone()}))
@@ -371,7 +402,9 @@ fn main() {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 titlebar: Some(TitlebarOptions {
                     title: Some(
-                        if std::env::var_os("WHISK_MEDIA_NETWORK_MODE").is_some() {
+                        if desktop_worker::benchmark_mode() {
+                            "Whisk — Capture Lab"
+                        } else if std::env::var_os("WHISK_MEDIA_NETWORK_MODE").is_some() {
                             "Whisk — Network Lab"
                         } else {
                             "Whisk — Media Lab"
@@ -385,12 +418,92 @@ fn main() {
             |_, cx| cx.new(MediaLab::new),
         )
         .expect("open Whisk native window");
+        if desktop_worker::benchmark_mode() {
+            cx.open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                        point(px(0.), px(30.)),
+                        size(px(1000.), px(600.)),
+                    ))),
+                    focus: false,
+                    titlebar: Some(TitlebarOptions {
+                        title: Some(media_spike::capture_benchmark::TEST_WINDOW_TITLE.into()),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+                |_, cx| cx.new(TestWindow::new),
+            )
+            .expect("open owned test window");
+        }
         cx.on_window_closed(|cx| {
-            if cx.windows().is_empty() {
+            if cx.windows().is_empty() || desktop_worker::benchmark_mode() {
                 cx.quit();
             }
         })
         .detach();
         cx.activate(true);
     });
+}
+
+fn capture_description() -> String {
+    match desktop_worker::capture_run() {
+        Ok(run) => format!(
+            "Capture experiment: {:?}, {} seconds of publish/decode observation plus setup/cleanup. Owned test window only; no microphone. GPU presentation is unmeasured.",
+            run.profile, run.seconds
+        ),
+        Err(_) => "Invalid capture profile or duration. Relaunch using run-capture-lab.sh.".into(),
+    }
+}
+struct TestWindow {
+    ticks: u64,
+}
+impl TestWindow {
+    fn new(cx: &mut Context<Self>) -> Self {
+        cx.spawn(async move |this, cx| {
+            loop {
+                Timer::after(Duration::from_millis(16)).await;
+                if this
+                    .update(cx, |view, cx| {
+                        view.ticks += 1;
+                        cx.notify();
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
+        Self { ticks: 0 }
+    }
+}
+impl Render for TestWindow {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        let color = if self.ticks % 120 < 60 {
+            0x287a9c
+        } else {
+            0x9c6828
+        };
+        div()
+            .size_full()
+            .bg(rgb(color))
+            .text_color(rgb(0xffffff))
+            .p_8()
+            .flex()
+            .flex_col()
+            .gap_6()
+            .child(div().text_3xl().child("Whisk capture test window"))
+            .child(
+                div()
+                    .text_2xl()
+                    .child(format!("Animated test frame {}", self.ticks)),
+            )
+            .child(div().flex_1().bg(rgb(if self.ticks.is_multiple_of(2) {
+                0x344b60
+            } else {
+                0x4b6034
+            })))
+            .child("Owned animation only · no microphone · safe local capture source")
+    }
 }

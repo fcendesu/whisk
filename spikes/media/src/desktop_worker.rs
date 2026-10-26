@@ -43,13 +43,13 @@ impl Worker {
                         .is_some_and(|(id, _)| *id != active.load(Ordering::Acquire))
                         && let Some((_, old)) = stream.take()
                     {
-                        let _ = old.stop();
+                        stop_capture(old);
                     }
                     if network.as_ref().is_some_and(|(_, task)| task.is_finished())
                         && let Some((id, old)) = network.take() {
                             let _ = old.join();
                             if stream.as_ref().is_some_and(|(stream_id, _)| *stream_id == id)
-                                && let Some((_, old)) = stream.take() { let _ = old.stop(); }
+                                && let Some((_, old)) = stream.take() { stop_capture(old); }
                     }
                     let command = match input.recv_timeout(Duration::from_millis(50)) {
                         Ok(command) => command,
@@ -59,19 +59,19 @@ impl Worker {
                     match command {
                         Command::Sources(id) => {
                             let result =
-                                capture::available_sources().map_err(|error| error.to_string());
+                                if benchmark_mode(){capture::available_owned_test_sources()}else{capture::available_sources()}.map_err(|error|error.to_string());
                             if output.send(Event::Sources(id, result)).is_err() {
                                 break;
                             }
                         }
                         Command::Start(id, source) => {
                             if let Some((_, old)) = stream.take() {
-                                let _ = old.stop();
+                                stop_capture(old);
                             }
                             if active.load(Ordering::Acquire) != id {
                                 continue;
                             }
-                            let result = capture::open_source(source);
+                            let result = open_capture(source);
                             let receiver = match result {
                                 Ok(new) => {
                                     if active.load(Ordering::Acquire) != id {
@@ -89,6 +89,7 @@ impl Worker {
                             }
                         }
                         Command::Loopback(id, source) => {
+                            if benchmark_mode() && source.is_none(){let _=output.send(Event::NetworkFinished(id,Err("Select the owned test window before publishing.".into())));continue;}
                             if let Some((_, old)) = network.take() { let _ = old.join(); }
                             if active.load(Ordering::Acquire) != id { continue; }
                             let config = ["LIVEKIT_URL", "LIVEKIT_PUBLISH_TOKEN", "LIVEKIT_TOKEN"].map(std::env::var);
@@ -96,16 +97,21 @@ impl Worker {
                                 if output.send(Event::NetworkFinished(id, Err("Start the local SFU fixture and launch with LIVEKIT_URL, LIVEKIT_PUBLISH_TOKEN and LIVEKIT_TOKEN to run the network test.".into()))).is_err() { break; }
                                 continue;
                             };
+                            if benchmark_mode() && url::Url::parse(&url).ok().is_none_or(|u|u.scheme()!="ws" || u.host_str()!=Some("127.0.0.1")) {
+                                let _=output.send(Event::NetworkFinished(id,Err("Capture Lab only publishes to the local loopback fixture.".into())));continue;
+                            }
+                            if benchmark_mode(){save_phase_marker();}
                             let input = if let Some(source) = source {
-                                if let Some((_, old)) = stream.take() { let _ = old.stop(); }
-                                match capture::open_source(source) {
+                                if let Some((_, old)) = stream.take() { stop_capture(old); }
+                                match open_capture(source) {
                                     Ok(new) => {
-                                        if active.load(Ordering::Acquire) != id { let _ = new.stop(); continue; }
+                                        if active.load(Ordering::Acquire) != id { stop_capture(new);if benchmark_mode(){save_outcome(&Err("Cancelled before network observation.".into()));}continue; }
                                         let frames = new.frames.clone();
                                         stream = Some((id, new));
                                         Some(frames)
                                     }
                                     Err(error) => {
+                                        if benchmark_mode(){save_outcome(&Err(error.to_string()));save_capture_unavailable();}
                                         if output.send(Event::NetworkFinished(id, Err(error.to_string()))).is_err() { break; }
                                         continue;
                                     }
@@ -135,6 +141,10 @@ impl Worker {
                                             return Ok(format!("Experimental {name} complete: {} / {} decoded frames across two focus phases. Generated audio continuity: {}. Not quality certified.",report.received_frames[0],report.received_frames[1],report.audio_verified));
                                         }
                                         let report = match input {
+                                            Some(input) if benchmark_mode()=>{
+                                                let run=capture_run().map_err(|_|media_spike::loopback::MediaError::InvalidInput)?;
+                                                media_spike::loopback::run_capture_profile_preview(&url,&publisher,&viewer,run,input,target).await
+                                            },
                                             Some(input) => media_spike::loopback::run_capture_preview(&url, &publisher, &viewer, Duration::from_secs(30), input, target).await,
                                             None => media_spike::loopback::run_loopback_preview(&url, &publisher, &viewer, Duration::from_secs(30), target).await,
                                         }?;
@@ -143,6 +153,7 @@ impl Worker {
                                     }).map_err(|error| format!("Network test stopped: {error}. Relaunch the lab to refresh its short-lived test credentials.")),
                                     Err(_) => Err("Unable to start the native media runtime.".into()),
                                 };
+                                if benchmark_mode(){save_outcome(&result);}
                                 let message = match result { Ok(message) | Err(message) => message };
                                 completion.send(FrameEvent::Finished(message));
                             })));
@@ -153,12 +164,12 @@ impl Worker {
                         }
                         Command::Stop => {
                             if let Some((_, old)) = stream.take() {
-                                let _ = old.stop();
+                                stop_capture(old);
                             }
                         }
                     }
                 }
-                if let Some((_, old)) = stream { let _ = old.stop(); }
+                if let Some((_, old)) = stream { stop_capture(old); }
                 if let Some((_, old)) = network { let _ = old.join(); }
             })
             .expect("start native capture worker");
@@ -185,5 +196,62 @@ fn save_report(report: &impl serde::Serialize) {
         && let Ok(json) = serde_json::to_vec_pretty(report)
     {
         let _ = std::fs::write(path, json);
+    }
+}
+
+pub fn benchmark_mode() -> bool {
+    env!("CARGO_BIN_NAME") == "whisk-capture-spike"
+}
+pub fn capture_run()
+-> Result<media_spike::capture_benchmark::CaptureRun, media_spike::loopback::MediaError> {
+    let profile = std::env::var("WHISK_CAPTURE_PROFILE").unwrap_or_else(|_| "720p30".into());
+    let seconds = std::env::var("WHISK_CAPTURE_SECONDS")
+        .unwrap_or_else(|_| "600".into())
+        .parse()
+        .map_err(|_| media_spike::loopback::MediaError::InvalidInput)?;
+    media_spike::capture_benchmark::CaptureRun::new(&profile, seconds)
+}
+fn open_capture(source: SourceId) -> Result<FrameStream, capture::CaptureError> {
+    if benchmark_mode() {
+        capture::open_owned_test_source(
+            source,
+            capture_run().map_err(|_| capture::CaptureError::InvalidFrame)?,
+        )
+    } else {
+        capture::open_source(source)
+    }
+}
+fn stop_capture(stream: FrameStream) {
+    let stopped = stream.stop().is_ok();
+    if benchmark_mode()
+        && let Ok(path) = std::env::var("WHISK_CAPTURE_STATS_PATH")
+    {
+        let snapshot = stream
+            .counters
+            .snapshot(stream.started.elapsed().as_millis() as u64);
+        if let Ok(mut value) = serde_json::to_value(snapshot) {
+            value["capture_stop_succeeded"] = serde_json::json!(stopped);
+            if let Ok(bytes) = serde_json::to_vec_pretty(&value) {
+                let _ = std::fs::write(path, bytes);
+            }
+        }
+    }
+}
+
+fn save_phase_marker() {
+    if let Ok(path) = std::env::var("WHISK_CAPTURE_START_PATH") {
+        let _=std::fs::write(path,serde_json::json!({"phase":"capture_setup_and_network_observation","unix_ms":std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis()}).to_string());
+    }
+}
+fn save_outcome(result: &Result<String, String>) {
+    if let Ok(path) = std::env::var("WHISK_CAPTURE_OUTCOME_PATH") {
+        let run = capture_run().ok();
+        let value = serde_json::json!({"status":if result.is_ok(){"completed"}else{"failed"},"message":result.as_ref().ok().or_else(||result.as_ref().err()),"requested_seconds":run.map(|r|r.seconds),"requested_profile":run.map(|r|r.profile),"source":"owned_native_window","partial_network_counters_on_error":null,"quality_certified":false,"terminal_unix_ms":std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis()});
+        let _ = std::fs::write(path, serde_json::to_vec_pretty(&value).unwrap_or_default());
+    }
+}
+fn save_capture_unavailable() {
+    if let Ok(path) = std::env::var("WHISK_CAPTURE_STATS_PATH") {
+        let _ = std::fs::write(path, b"{\"capture_started\":false,\"counters\":null}");
     }
 }
