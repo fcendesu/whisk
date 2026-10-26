@@ -801,7 +801,7 @@ and features with warnings denied, shell syntax and diff checks passed. Independ
 review found no actionable defects. The saved Media Lab, Audio Lab and Speaker Lab
 bundle hashes matched; no signed app was rebuilt and CI was not dispatched.
 
-## Physical microphone with video focus — implementation pending device proof
+## Physical microphone with video focus — 2026-10-26
 
 [Issue #13](https://github.com/fcendesu/whisk/issues/13) adds **Whisk Focus Lab**,
 a separate `dev.whisk.focus-lab` bundle. The granted Media Lab, Audio Lab and
@@ -852,5 +852,25 @@ diff checks pass. Added regressions cover silent PCM versus delivery gaps,
 cancellation before/during device setup, expired/slow publication budgets, and
 retaining a completed proof while later stats are slow. Review identified the
 publication/deadline and post-capture stats boundary issues; both were repaired
-and checked. Physical microphone/video-focus observations are still pending;
-these automated checks never enable a microphone and do not complete #13.
+and checked. These automated checks never enable a microphone. The physical observation
+below supplies the separate device evidence for #13.
+
+
+The [user-started combined device report](results/2026-10-26-macos-arm64-microphone-focus.json)
+records 500 decoded microphone frames in each focus phase and 64 / 14 non-silent
+frames, with a maximum decoded receive gap of **24 ms** over a 10,006 ms observation.
+Both phases pass the unchanged strict `<250 ms` threshold. The two generated
+1280×720 video sources delivered 144 / 150 focused decoded frames with zero
+wrong-source frames. H.264 encode/decode used VideoToolbox; frame-age p95 was
+30 ms. Optional cumulative audio RTP counters show 507 received packets, zero
+reported packet loss and zero concealed samples. These are scoped post-observation
+counters, not packet timing or speech-quality certification.
+
+The user reported finishing the test; the app visibly confirmed microphone off,
+continuity true, physical input proof true and report saved. All four lab bundles
+matched their saved hashes. An earlier attempt stopped at connection setup with
+expired two-minute fixture credentials and produced no device report. Relaunching
+with `--reuse-build` refreshed credentials without rebuilding or re-signing. Start
+within two minutes of launch; if credentials expire while waiting, quit and reuse
+the same build again. The successful short physical run completes #13; sustained
+actual-capture/GPUI proof (#14), recovery (#15) and M0 acceptance (#16) remain open.

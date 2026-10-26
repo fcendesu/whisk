@@ -1,0 +1,140 @@
+{
+  "submitted_frames": [
+    300,
+    300
+  ],
+  "received_size": [
+    [
+      1280,
+      720
+    ],
+    [
+      1280,
+      720
+    ]
+  ],
+  "requested_profile": "p720_f30",
+  "requested_fps": 30,
+  "frame_age_samples": 294,
+  "invalid_timestamps": 0,
+  "frame_age_p50_ms": 27,
+  "frame_age_p95_ms": 30,
+  "frame_age_max_ms": 34,
+  "encoder": [
+    "VideoToolbox",
+    "VideoToolbox"
+  ],
+  "decoder": [
+    "VideoToolbox",
+    "VideoToolbox"
+  ],
+  "phase_duration_ms": [
+    5002,
+    5003
+  ],
+  "received_frames": [
+    144,
+    150
+  ],
+  "wrong_source_frames": 0,
+  "duration_ms": 10007,
+  "audio_verified": true,
+  "audio_source_calls": 0,
+  "audio_source_max_interval_ms": 0,
+  "audio_source_max_wait_ms": 0,
+  "audio_received_frames": [
+    500,
+    500
+  ],
+  "audio_receive_max_interval_ms": 24,
+  "audio_observation_ms": 10006,
+  "audio_packets_received": 507,
+  "audio_packets_lost": 0,
+  "audio_jitter_ms": 1.0,
+  "audio_concealed_samples": 0,
+  "audio_rtp_stats_scope": "track_cumulative_after_observation",
+  "video_submit_max_us": 4071,
+  "video_frame_prepare_max_us": 5561,
+  "audible_audio_frames": [
+    64,
+    14
+  ],
+  "max_audio_gap_ms": 24,
+  "tone_frequency_hz": 0.0,
+  "microphone_verified": true,
+  "audio_source": "physical_microphone",
+  "audio_continuity_basis": "decoded_microphone_pcm",
+  "device_context": "system_default_microphone_coreaudio",
+  "quality_certified": false,
+  "publisher_transports": [
+    [
+      {
+        "protocol": "udp",
+        "local_candidate_type": "host",
+        "remote_candidate_type": "prflx",
+        "state": "succeeded",
+        "nominated": true,
+        "rtt_ms": 1.0,
+        "bytes_sent": 256882,
+        "bytes_received": 67779
+      }
+    ],
+    [
+      {
+        "protocol": "udp",
+        "local_candidate_type": "host",
+        "remote_candidate_type": "prflx",
+        "state": "succeeded",
+        "nominated": true,
+        "rtt_ms": 1.0,
+        "bytes_sent": 135162,
+        "bytes_received": 183712
+      }
+    ]
+  ],
+  "viewer_transports": [
+    [
+      {
+        "protocol": "udp",
+        "local_candidate_type": "host",
+        "remote_candidate_type": "prflx",
+        "state": "succeeded",
+        "nominated": true,
+        "rtt_ms": 2.0,
+        "bytes_sent": 2576,
+        "bytes_received": 245999
+      }
+    ],
+    [
+      {
+        "protocol": "udp",
+        "local_candidate_type": "host",
+        "remote_candidate_type": "prflx",
+        "state": "succeeded",
+        "nominated": true,
+        "rtt_ms": 2.0,
+        "bytes_sent": 2576,
+        "bytes_received": 245999
+      }
+    ]
+  ],
+  "measurement_context": {
+    "os": "macOS 27.0.1",
+    "hardware": "Apple M4",
+    "architecture": "arm64",
+    "build": "development",
+    "implementation_commit": "c4aafad",
+    "saved_at_utc": "2026-10-26T15:21:11.728897+00:00",
+    "user_action": "User clicked Start and reported completing the physical test; app confirmed microphone off and saved report.",
+    "speaker_playback": "disabled",
+    "saved_media": "counter report only; no microphone PCM saved",
+    "foreground_load_controlled": false,
+    "prior_attempt": "UI reported connect error with no report; local fixture healthy and server expired-token diagnostics present. Frozen app relaunched with fresh room-scoped credentials; successful result below.",
+    "limits": [
+      "Short default-microphone test with generated 720p30 video; no GPU presentation, actual screen capture, sustained-load, speech-quality or high-profile certification.",
+      "250ms criterion measures decoded PCM delivery including silent frames; non-silent input activity is reported separately.",
+      "RTP counters are a cumulative post-observation snapshot, not observation-window deltas.",
+      "Device capture setup/stop lifetime was not separately timed in this report; synchronous native calls remain unpreemptible."
+    ]
+  }
+}
