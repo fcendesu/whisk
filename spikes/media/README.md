@@ -439,9 +439,9 @@ preparation sample. It is a rendering/export check, not a sustained FPS result.
 A review caught a shutdown race in an initial automatic-on-quit export; that
 promise was removed in favor of the explicit save acknowledgement.
 
-Current verification: 45 deterministic Rust tests, four Python tests and seventeen
-explicit local-SFU tests pass, plus formatting/clippy/shell checks. Remote CI has
-not been run. Screen-capture access/live preview and physical microphone
+Current verification: 46 deterministic Rust tests, eleven Python tests and eighteen
+explicit local-SFU tests pass, plus formatting/clippy/shell checks. These checks
+ran locally; CI remains manual. Screen-capture access/live preview and physical microphone
 publish/decode have been exercised. Full M0 is incomplete as described above.
 
 
@@ -690,3 +690,62 @@ with a connection timeout. The isolated test, its full seven-test group, and a
 fresh complete live run then passed without deadline changes/retries in the
 runner. The timeout cause was not reproduced; the failed log is retained in the
 execution ledger directory. This remains an observed fixture/network limitation.
+
+
+## Relay fixture interface fix and safe diagnostics — 2026-10-26
+
+[Issue #12](https://github.com/fcendesu/whisk/issues/12) isolated the intermittent
+publisher join failure to the positive TURN fixture's interface/address mismatch.
+It advertised loopback while collecting candidates on both the bridge and loopback
+interfaces. The fixture now restricts RTC interfaces to `lo`; its exposed ports,
+relay-only policy, pinned server/client versions and connection deadlines are unchanged.
+This filter is specific to the container-local relay proof, not a production network configuration.
+
+A failed passive capture showed successful TURN allocation and permission, one
+received relay candidate, and 202 binding requests relayed to the advertised SFU
+endpoint without a binding response. Private checks confirmed matching ICE fragments,
+message integrity and destination. Alternating the sole included interface reproduced
+Publisher/Timeout with `eth0` three out of three times; `lo` passed three out of three.
+Three subsequent complete live runs passed all 18 cases, including the negative paths.
+The exact internal duplicate-candidate/mux selection is inferred; the configuration
+mismatch is demonstrated. This is consistent with the [Pion maintainer's explanation](https://github.com/pion/ice/issues/541)
+and uses the [pinned LiveKit interface filter](https://github.com/livekit/livekit/blob/v1.13.10/config-sample.yaml).
+No SDK mode workaround was retained: eight paired single/dual-PC controls passed in
+both modes and did not discriminate the cause. Private native tracing and packet
+instrumentation are excluded from the shipped code and public evidence.
+
+[Sanitized investigation record](results/2026-10-26-macos-arm64-relay-investigation.json)
+retains failures, successes, controlled comparisons and post-fix results. Raw packets,
+SDP, ICE credentials, candidate addresses and participant identities are not published.
+
+```sh
+WHISK_MEDIA_DIAGNOSTIC_DIR="$PWD/target/media-test-diagnostics" \
+  ./scripts/test-native-media.sh
+```
+
+The optional collector saves `client.jsonl` and `relay-server.jsonl` in a unique
+`run-<pid>` directory before fixture cleanup. It allowlists roles, failure kinds,
+test counts and server connection events. It uses private temporary test output,
+removes it on exit, and preserves Cargo's exit status even if diagnostic writes fail.
+Without the environment variable, the runner keeps its existing streaming output.
+Initial video-probe joins now preserve the sanitized cause and attempted role:
+
+```json
+{"error":"join","stage":"publisher","cause":{"error":"connect","kind":"timeout"}}
+```
+
+The no-TURN assertion also requires publisher failure and excludes authentication
+rejection, so invalid credentials or a later viewer failure cannot stand in for
+proof that relay-only enforcement worked.
+
+A separate full run passed TURN but failed the experimental 1080p60 generated-audio
+check with a 648 ms gap. Its [counter record](results/2026-10-26-macos-arm64-profile-audio-failure.json)
+and [issue #23](https://github.com/fcendesu/whisk/issues/23) remain open evidence;
+this fixture fix does not claim to repair audio scheduling. M0 remains incomplete.
+
+Final local verification for this change: 46 deterministic Rust and 11 Python
+checks pass, with formatting/clippy/shell checks. The fixture passed three fresh
+complete 18-test live runs. After strengthening the no-TURN assertion, its focused
+valid-token test passed and a deliberately invalid publisher token made that
+assertion fail as intended. Independent scoped review found no remaining issues.
+Protected Media, Audio and Speaker app-bundle hashes are unchanged.

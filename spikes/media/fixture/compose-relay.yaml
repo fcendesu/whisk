@@ -9,6 +9,11 @@ services:
           use_external_ip: false
           use_ice_lite: true
           enable_loopback_candidate: true
+          # Only loopback can back the advertised loopback candidate. Mapping
+          # eth0 and lo to the same address makes UDP mux selection ambiguous.
+          interfaces:
+            includes:
+              - lo
           stun_servers:
             - "127.0.0.1:9"
         turn:

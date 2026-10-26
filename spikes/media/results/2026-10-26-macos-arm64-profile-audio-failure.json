@@ -1,0 +1,43 @@
+{
+  "date": "2026-10-26",
+  "os": "macOS 27.0.1",
+  "hardware": "Apple M4",
+  "arch": "arm64",
+  "issue": 23,
+  "test": "requested_high_profiles_reach_the_decoder_at_the_requested_dimensions",
+  "requested_profile": "1080p60",
+  "phase_duration_ms": [
+    2042,
+    2001
+  ],
+  "received_size": [
+    [
+      1920,
+      1080
+    ],
+    [
+      1920,
+      1080
+    ]
+  ],
+  "received_frames": [
+    105,
+    41
+  ],
+  "audible_audio_frames": [
+    193,
+    43
+  ],
+  "max_audio_gap_ms": 648,
+  "continuity_threshold_ms": 250,
+  "audio_verified": false,
+  "tone_frequency_hz": 455.93220338983053,
+  "frame_age_p95_ms": 152,
+  "frame_age_max_ms": 1076,
+  "microphone_verified": false,
+  "audio_source": "generated_440hz_pcm",
+  "quality_certified": false,
+  "foreground_load_controlled": false,
+  "root_cause_confirmed": false,
+  "context": "Full live suite with passive UDP capture in the separate relay fixture. TURN relay test passed; failure occurred later on the ordinary SFU high-profile probe."
+}

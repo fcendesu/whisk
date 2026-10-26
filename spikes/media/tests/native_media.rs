@@ -125,7 +125,19 @@ async fn required_relay_media_refuses_the_available_direct_route_without_turn() 
     )
     .await
     .expect("missing-TURN media failure exceeded deadline");
-    assert!(matches!(result, Err(MediaError::Connect)), "{result:?}");
+    assert!(
+        matches!(
+            result,
+            Err(MediaError::Join {
+                stage: media_spike::loopback::JoinStage::Publisher,
+                cause: media_spike::room::ProbeError::Connect {
+                    kind: media_spike::room::FailureKind::Timeout
+                        | media_spike::room::FailureKind::Transport,
+                },
+            })
+        ),
+        "{result:?}"
+    );
 }
 
 #[tokio::test]
@@ -338,4 +350,50 @@ async fn failed_capture_is_rejected_before_connecting() {
     )
     .await;
     assert!(matches!(result, Err(MediaError::Capture)), "{result:?}");
+}
+
+#[tokio::test]
+async fn publisher_join_failure_reports_stage_without_credentials() {
+    let result = media_spike::loopback::run_loopback(
+        "ws://private-user:private-password@localhost:7880",
+        "private-publisher-token",
+        "private-viewer-token",
+        Duration::from_secs(1),
+    )
+    .await
+    .expect_err("credential-bearing endpoint must be rejected");
+    let json = serde_json::to_value(&result).unwrap();
+    assert_eq!(json["stage"], "publisher", "{json}");
+    assert_eq!(json["cause"]["error"], "invalid_input", "{json}");
+    let encoded = json.to_string();
+    for secret in [
+        "private-user",
+        "private-password",
+        "private-publisher-token",
+        "private-viewer-token",
+        "localhost",
+    ] {
+        assert!(
+            !encoded.contains(secret),
+            "connection diagnostic leaked input"
+        );
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires loopback SFU with a valid publisher token"]
+async fn viewer_join_failure_reports_stage_and_rejection() {
+    let _lock = MEDIA_TEST_LOCK.lock().await;
+    let result = media_spike::loopback::run_loopback(
+        &env::var("LIVEKIT_URL").unwrap(),
+        &env::var("LIVEKIT_PUBLISH_TOKEN").unwrap(),
+        "private-invalid-viewer-token",
+        Duration::from_secs(1),
+    )
+    .await
+    .expect_err("invalid viewer token must be rejected");
+    let json = serde_json::to_value(&result).unwrap();
+    assert_eq!(json["stage"], "viewer", "{json}");
+    assert_eq!(json["cause"]["kind"], "rejected", "{json}");
+    assert!(!json.to_string().contains("private-invalid-viewer-token"));
 }

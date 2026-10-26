@@ -1,0 +1,757 @@
+{
+  "date": "2026-10-26",
+  "os": "macOS 27.0.1",
+  "hardware": "Apple M4",
+  "arch": "arm64",
+  "livekit_rust": "0.9.7",
+  "livekit_server": "1.13.10",
+  "connect_deadline_seconds": 10,
+  "relay_test_deadline_seconds": 40,
+  "root_cause_confirmed": true,
+  "resolved": true,
+  "observed_boundary": "Publisher signaling joined; ICE stayed checking until close near the connection deadline; viewer join did not start.",
+  "experiments": [
+    {
+      "trial": 1,
+      "client": [
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 4,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 2,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 8,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 4,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "runner_exit",
+          "exit_code": 0
+        }
+      ],
+      "relay_server": [
+        {
+          "time": "2026-10-26T07:30:16.442Z",
+          "event": "signaling_join",
+          "role": "publisher"
+        },
+        {
+          "time": "2026-10-26T07:30:16.446Z",
+          "event": "offer",
+          "role": "publisher"
+        },
+        {
+          "time": "2026-10-26T07:30:16.448Z",
+          "event": "ice",
+          "role": "publisher",
+          "state": "checking"
+        },
+        {
+          "time": "2026-10-26T07:30:16.448Z",
+          "event": "peer_connection",
+          "role": "publisher",
+          "state": "connecting"
+        },
+        {
+          "time": "2026-10-26T07:30:16.448Z",
+          "event": "gathering",
+          "role": "publisher",
+          "state": "gathering"
+        },
+        {
+          "time": "2026-10-26T07:30:16.449Z",
+          "event": "answer",
+          "role": "publisher"
+        },
+        {
+          "time": "2026-10-26T07:30:16.449Z",
+          "event": "gathering",
+          "role": "publisher",
+          "state": "complete"
+        },
+        {
+          "time": "2026-10-26T07:30:16.449Z",
+          "event": "local_candidate",
+          "role": "publisher"
+        },
+        {
+          "time": "2026-10-26T07:30:16.449Z",
+          "event": "local_candidate",
+          "role": "publisher"
+        },
+        {
+          "time": "2026-10-26T07:30:16.449Z",
+          "event": "answer",
+          "role": "publisher"
+        },
+        {
+          "time": "2026-10-26T07:30:16.557Z",
+          "event": "ice",
+          "role": "publisher",
+          "state": "connected"
+        },
+        {
+          "time": "2026-10-26T07:30:16.561Z",
+          "event": "peer_connection",
+          "role": "publisher",
+          "state": "connected"
+        },
+        {
+          "time": "2026-10-26T07:30:16.582Z",
+          "event": "signaling_join",
+          "role": "viewer"
+        },
+        {
+          "time": "2026-10-26T07:30:16.584Z",
+          "event": "offer",
+          "role": "viewer"
+        },
+        {
+          "time": "2026-10-26T07:30:16.591Z",
+          "event": "ice",
+          "role": "viewer",
+          "state": "checking"
+        },
+        {
+          "time": "2026-10-26T07:30:16.591Z",
+          "event": "peer_connection",
+          "role": "viewer",
+          "state": "connecting"
+        },
+        {
+          "time": "2026-10-26T07:30:16.593Z",
+          "event": "gathering",
+          "role": "viewer",
+          "state": "gathering"
+        },
+        {
+          "time": "2026-10-26T07:30:16.593Z",
+          "event": "gathering",
+          "role": "viewer",
+          "state": "complete"
+        },
+        {
+          "time": "2026-10-26T07:30:16.593Z",
+          "event": "answer",
+          "role": "viewer"
+        },
+        {
+          "time": "2026-10-26T07:30:16.593Z",
+          "event": "local_candidate",
+          "role": "viewer"
+        },
+        {
+          "time": "2026-10-26T07:30:16.593Z",
+          "event": "local_candidate",
+          "role": "viewer"
+        },
+        {
+          "time": "2026-10-26T07:30:16.593Z",
+          "event": "answer",
+          "role": "viewer"
+        },
+        {
+          "time": "2026-10-26T07:30:16.702Z",
+          "event": "ice",
+          "role": "viewer",
+          "state": "connected"
+        },
+        {
+          "time": "2026-10-26T07:30:16.706Z",
+          "event": "peer_connection",
+          "role": "viewer",
+          "state": "connected"
+        },
+        {
+          "time": "2026-10-26T07:30:16.725Z",
+          "event": "offer",
+          "role": "publisher"
+        },
+        {
+          "time": "2026-10-26T07:30:16.725Z",
+          "event": "offer",
+          "role": "publisher"
+        },
+        {
+          "time": "2026-10-26T07:30:16.728Z",
+          "event": "answer",
+          "role": "publisher"
+        },
+        {
+          "time": "2026-10-26T07:30:16.728Z",
+          "event": "answer",
+          "role": "publisher"
+        },
+        {
+          "time": "2026-10-26T07:30:16.902Z",
+          "event": "offer",
+          "role": "viewer"
+        },
+        {
+          "time": "2026-10-26T07:30:16.903Z",
+          "event": "offer",
+          "role": "viewer"
+        },
+        {
+          "time": "2026-10-26T07:30:16.905Z",
+          "event": "answer",
+          "role": "viewer"
+        },
+        {
+          "time": "2026-10-26T07:30:16.905Z",
+          "event": "answer",
+          "role": "viewer"
+        },
+        {
+          "time": "2026-10-26T07:30:20.331Z",
+          "event": "peer_connection",
+          "role": "publisher",
+          "state": "closed"
+        },
+        {
+          "time": "2026-10-26T07:30:20.331Z",
+          "event": "peer_connection",
+          "role": "viewer",
+          "state": "closed"
+        },
+        {
+          "time": "2026-10-26T07:30:20.331Z",
+          "event": "ice",
+          "role": "publisher",
+          "state": "closed"
+        },
+        {
+          "time": "2026-10-26T07:30:20.331Z",
+          "event": "ice",
+          "role": "viewer",
+          "state": "closed"
+        }
+      ]
+    },
+    {
+      "trial": 2,
+      "client": [
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 4,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 2,
+          "failed": 0
+        },
+        {
+          "event": "join_failure",
+          "stage": "publisher",
+          "cause": "connect",
+          "kind": "timeout"
+        },
+        {
+          "event": "test_result",
+          "result": "failed",
+          "passed": 7,
+          "failed": 1
+        },
+        {
+          "event": "runner_exit",
+          "exit_code": 101
+        }
+      ],
+      "relay_server": [
+        {
+          "time": "2026-10-26T07:31:14.737Z",
+          "event": "signaling_join",
+          "role": "publisher"
+        },
+        {
+          "time": "2026-10-26T07:31:14.740Z",
+          "event": "offer",
+          "role": "publisher"
+        },
+        {
+          "time": "2026-10-26T07:31:14.743Z",
+          "event": "ice",
+          "role": "publisher",
+          "state": "checking"
+        },
+        {
+          "time": "2026-10-26T07:31:14.743Z",
+          "event": "peer_connection",
+          "role": "publisher",
+          "state": "connecting"
+        },
+        {
+          "time": "2026-10-26T07:31:14.743Z",
+          "event": "gathering",
+          "role": "publisher",
+          "state": "gathering"
+        },
+        {
+          "time": "2026-10-26T07:31:14.744Z",
+          "event": "gathering",
+          "role": "publisher",
+          "state": "complete"
+        },
+        {
+          "time": "2026-10-26T07:31:14.744Z",
+          "event": "answer",
+          "role": "publisher"
+        },
+        {
+          "time": "2026-10-26T07:31:14.744Z",
+          "event": "local_candidate",
+          "role": "publisher"
+        },
+        {
+          "time": "2026-10-26T07:31:14.744Z",
+          "event": "local_candidate",
+          "role": "publisher"
+        },
+        {
+          "time": "2026-10-26T07:31:14.744Z",
+          "event": "answer",
+          "role": "publisher"
+        },
+        {
+          "time": "2026-10-26T07:31:23.924Z",
+          "event": "ice",
+          "role": "publisher",
+          "state": "closed"
+        },
+        {
+          "time": "2026-10-26T07:31:23.924Z",
+          "event": "peer_connection",
+          "role": "publisher",
+          "state": "closed"
+        }
+      ]
+    },
+    {
+      "trial": 3,
+      "client": [
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 4,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 0,
+          "failed": 0
+        },
+        {
+          "event": "test_result",
+          "result": "ok",
+          "passed": 2,
+          "failed": 0
+        },
+        {
+          "event": "join_failure",
+          "stage": "publisher",
+          "cause": "connect",
+          "kind": "timeout"
+        },
+        {
+          "event": "test_result",
+          "result": "failed",
+          "passed": 7,
+          "failed": 1
+        },
+        {
+          "event": "runner_exit",
+          "exit_code": 101
+        }
+      ],
+      "relay_server": [
+        {
+          "time": "2026-10-26T07:32:08.321Z",
+          "event": "signaling_join",
+          "role": "publisher"
+        },
+        {
+          "time": "2026-10-26T07:32:08.323Z",
+          "event": "offer",
+          "role": "publisher"
+        },
+        {
+          "time": "2026-10-26T07:32:08.325Z",
+          "event": "ice",
+          "role": "publisher",
+          "state": "checking"
+        },
+        {
+          "time": "2026-10-26T07:32:08.325Z",
+          "event": "peer_connection",
+          "role": "publisher",
+          "state": "connecting"
+        },
+        {
+          "time": "2026-10-26T07:32:08.325Z",
+          "event": "gathering",
+          "role": "publisher",
+          "state": "gathering"
+        },
+        {
+          "time": "2026-10-26T07:32:08.326Z",
+          "event": "gathering",
+          "role": "publisher",
+          "state": "complete"
+        },
+        {
+          "time": "2026-10-26T07:32:08.326Z",
+          "event": "answer",
+          "role": "publisher"
+        },
+        {
+          "time": "2026-10-26T07:32:08.326Z",
+          "event": "local_candidate",
+          "role": "publisher"
+        },
+        {
+          "time": "2026-10-26T07:32:08.327Z",
+          "event": "local_candidate",
+          "role": "publisher"
+        },
+        {
+          "time": "2026-10-26T07:32:08.327Z",
+          "event": "answer",
+          "role": "publisher"
+        },
+        {
+          "time": "2026-10-26T07:32:18.308Z",
+          "event": "ice",
+          "role": "publisher",
+          "state": "closed"
+        },
+        {
+          "time": "2026-10-26T07:32:18.308Z",
+          "event": "peer_connection",
+          "role": "publisher",
+          "state": "closed"
+        }
+      ]
+    }
+  ],
+  "diagnosis": "The isolated relay fixture advertised loopback while allowing both bridge and loopback interfaces. Restricting RTC candidate interfaces to lo fixes the interface/address mismatch. Exact internal duplicate-candidate/mux selection is inferred, not directly observed.",
+  "passive_failed_capture": {
+    "turn_allocate_success": 1,
+    "turn_permission_success": 1,
+    "relay_candidate_received_by_server": 1,
+    "relayed_binding_requests": 202,
+    "binding_responses": 0,
+    "remote_fragment_matches_answer": true,
+    "local_fragment_matches_offer": true,
+    "message_integrity_matches_answer_password": true,
+    "destination_matches_advertised_udp_candidate": true,
+    "raw_capture_published": false
+  },
+  "interface_control_trials": [
+    {
+      "pair": 1,
+      "interface": "eth0",
+      "exit_code": 101,
+      "elapsed_ms": 12724
+    },
+    {
+      "pair": 1,
+      "interface": "lo",
+      "exit_code": 0,
+      "elapsed_ms": 4859
+    },
+    {
+      "pair": 2,
+      "interface": "lo",
+      "exit_code": 0,
+      "elapsed_ms": 4800
+    },
+    {
+      "pair": 2,
+      "interface": "eth0",
+      "exit_code": 101,
+      "elapsed_ms": 10511
+    },
+    {
+      "pair": 3,
+      "interface": "eth0",
+      "exit_code": 101,
+      "elapsed_ms": 10562
+    },
+    {
+      "pair": 3,
+      "interface": "lo",
+      "exit_code": 0,
+      "elapsed_ms": 4848
+    }
+  ],
+  "sdk_mode_control": {
+    "single_pc_passes": 8,
+    "dual_pc_passes": 8,
+    "conclusion": "No discrimination; SDK defaults remain unchanged."
+  },
+  "post_fix_full_trials": [
+    {
+      "trial": 1,
+      "exit_code": 0,
+      "live_tests_passed": 18
+    },
+    {
+      "trial": 2,
+      "exit_code": 0,
+      "live_tests_passed": 18
+    },
+    {
+      "trial": 3,
+      "exit_code": 0,
+      "live_tests_passed": 18
+    }
+  ],
+  "separate_observation": {
+    "issue": 23,
+    "description": "One pre-fix passive-capture full run passed relay but failed high-profile generated-audio continuity with a 648ms gap. Tracked separately; not claimed fixed."
+  },
+  "references": [
+    "https://github.com/pion/ice/issues/541",
+    "https://github.com/livekit/livekit/blob/v1.13.10/config-sample.yaml"
+  ],
+  "final_verification": {
+    "deterministic_rust_tests_passed": 46,
+    "python_tests_passed": 11,
+    "full_live_tests_per_run": 18,
+    "post_fix_full_runs": 3,
+    "hardened_no_turn_valid_input_passed": true,
+    "invalid_auth_mutation_rejected_as_expected": true,
+    "format_clippy_shell_diff_checks_passed": true,
+    "independent_review": "No remaining actionable findings",
+    "protected_app_bundles_unchanged": true,
+    "ci_triggered": false
+  }
+}

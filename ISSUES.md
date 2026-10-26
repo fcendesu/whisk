@@ -43,6 +43,7 @@ their implementation starts.
 | M1: Durable event outbox and gateway foundation | [#21](https://github.com/fcendesu/whisk/issues/21) | Blocked |
 | M1: Compose deploy smoke | [#22](https://github.com/fcendesu/whisk/issues/22) | Blocked |
 
-The first ready development item is [the intermittent TURN timeout](https://github.com/fcendesu/whisk/issues/12).
+The relay fixture fix and its evidence are tracked in [#12](https://github.com/fcendesu/whisk/issues/12).
+A separately observed high-profile generated-audio gap is tracked in [#23](https://github.com/fcendesu/whisk/issues/23).
 The completed baseline records existing work; it does not certify GPU presentation,
 high-profile real capture, platform recovery, or release quality.

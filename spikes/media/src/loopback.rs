@@ -1,7 +1,7 @@
 //! Native generated or explicitly selected capture video through a self-hosted SFU.
 use crate::{
     capture::VideoFrame as BgraFrame,
-    room::{IcePolicy, ProbeRoom, connect_probe_with_policy},
+    room::{IcePolicy, ProbeError, ProbeRoom, connect_probe_with_policy},
 };
 use futures_util::StreamExt;
 use livekit::{
@@ -34,12 +34,20 @@ pub struct LoopbackReport {
     pub viewer_transports: Vec<crate::transport::TransportReport>,
 }
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum JoinStage {
+    Publisher,
+    Viewer,
+}
+
+#[derive(Debug, Serialize)]
 #[serde(tag = "error", rename_all = "snake_case")]
 pub enum MediaError {
     Cancelled,
     Capture,
     InvalidInput,
     Connect,
+    Join { stage: JoinStage, cause: ProbeError },
     Publish,
     Subscribe,
     Decode,
@@ -112,11 +120,11 @@ async fn run_internal(
         input.mark_changed();
     }
     let publisher = tokio::select! {
-        result = connect_probe_with_policy(url, publisher_token, Duration::from_secs(10), policy) => result.map_err(|_| MediaError::Connect)?,
+        result = connect_probe_with_policy(url, publisher_token, Duration::from_secs(10), policy) => result.map_err(|cause| MediaError::Join { stage: JoinStage::Publisher, cause })?,
         _ = wait_cancelled(target.as_ref()) => return Err(MediaError::Cancelled),
     };
     let viewer_result = tokio::select! {
-        result = connect_probe_with_policy(url, viewer_token, Duration::from_secs(10), policy) => result.map_err(|_| MediaError::Connect),
+        result = connect_probe_with_policy(url, viewer_token, Duration::from_secs(10), policy) => result.map_err(|cause| MediaError::Join { stage: JoinStage::Viewer, cause }),
         _ = wait_cancelled(target.as_ref()) => Err(MediaError::Cancelled),
     };
     let mut viewer = match viewer_result {
