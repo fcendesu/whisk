@@ -1014,3 +1014,27 @@ signature verification passes. The initial tool-window stacking problem was
 resolved by raising the controls above the source; idle sessions without a publish
 marker were not counted as measurements. Only counter data is committed. Recovery
 #15 and M0 acceptance #16 remain open, and CI stays manual.
+
+## Recovery verification preparation — 2026-10-27
+
+[Recovery checklist and safe manual procedure](RECOVERY.md) distinguish injected
+lifecycle checks from physical recovery in [#15](https://github.com/fcendesu/whisk/issues/15).
+The new local-SFU regression starts with actual decoded fixture frames, then
+injects PermissionDenied, SourceGone, backend error or source end. A synchronous
+post-terminal frame attempt must not replace that state; the active probe must
+return a capture error within its test deadline. No physical screen, microphone
+or speaker is accessed by this test.
+
+Checks for this verification change: 62 deterministic Rust, all 20 live SFU and
+15 Python tests pass; formatting, clippy with warnings denied and diff checks
+pass. Review tightened the late-frame ordering and narrowed the cleanup claim:
+a capture-error return alone does not independently prove successful SFU
+unpublication/room closure. The current probe preserves its primary error before
+checking those cleanup outcomes; that observability limit remains explicit.
+All five permissioned app bundles match their saved hashes and are not rebuilt.
+
+The user has only a built-in microphone available. Physical removal/reconnection
+cannot be performed with that input and remains untested; muting or synthesizing
+silence is not equivalent. The frozen Capture Lab is prepared idle for a separate
+app-scoped permission revocation/restore check, pending explicit user opt-in.
+No grant has been changed, no broad TCC reset is used, and #15 remains open.

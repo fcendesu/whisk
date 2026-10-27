@@ -461,3 +461,90 @@ async fn captured_profile_path_keeps_requested_dimensions_without_generated_fall
         assert!(report.i420_to_bgra_calls >= report.decoded_frames);
     }
 }
+
+/// Injected lifecycle errors exercise the real transport without opening devices.
+#[tokio::test]
+#[ignore = "requires local SFU; fixture frames and simulated terminal capture events only"]
+async fn injected_terminal_events_return_capture_errors_after_decode_and_reject_late_frames() {
+    use media_spike::{
+        capture::{CaptureError, FrameEvent, VideoFrame, frame_channel},
+        loopback::{PreviewTarget, run_capture_preview},
+    };
+    use std::sync::{Arc, atomic::AtomicU64};
+    let _lock = MEDIA_TEST_LOCK.lock().await;
+    for terminal in [
+        FrameEvent::Error(CaptureError::PermissionDenied),
+        FrameEvent::Error(CaptureError::SourceGone),
+        FrameEvent::Error(CaptureError::Backend),
+        FrameEvent::Finished("fixture source ended".into()),
+    ] {
+        let (input, receiver) = frame_channel();
+        let terminal_sender = input.clone();
+        let (output, mut decoded) = frame_channel();
+        let target = PreviewTarget {
+            frames: output,
+            generation: Arc::new(AtomicU64::new(1)),
+            session: 1,
+        };
+        let blue = Arc::new(VideoFrame {
+            width: 1280,
+            height: 720,
+            bgra: [230, 120, 40, 255]
+                .into_iter()
+                .cycle()
+                .take(1280 * 720 * 4)
+                .collect::<Vec<_>>()
+                .into(),
+        });
+        let late_frame = blue.clone();
+        let inspected = receiver.clone();
+        let feeder = tokio::spawn(async move {
+            loop {
+                input.send(FrameEvent::Frame(blue.clone()));
+                tokio::time::sleep(Duration::from_millis(33)).await;
+            }
+        });
+        let url = env::var("LIVEKIT_URL").unwrap();
+        let publisher = env::var("LIVEKIT_PUBLISH_TOKEN").unwrap();
+        let viewer = env::var("LIVEKIT_TOKEN").unwrap();
+        let mut probe = Box::pin(run_capture_preview(
+            &url,
+            &publisher,
+            &viewer,
+            Duration::from_secs(30),
+            receiver,
+            target,
+        ));
+        let ready = tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                tokio::select! {
+                    result = &mut probe => panic!("probe ended before injected error: {result:?}"),
+                    changed = decoded.changed() => {
+                        changed.expect("preview ended before fixture decoded");
+                        if let FrameEvent::Frame(frame)=&*decoded.borrow_and_update()
+                            && frame.bgra[0]>180 && frame.bgra[2]<80 {break;}
+                    }
+                }
+            }
+        })
+        .await;
+        if ready.is_err() {
+            feeder.abort();
+            panic!("fixture did not reach native decoder before error injection");
+        }
+        terminal_sender.send(terminal.clone());
+        // Guarantee a post-terminal attempt before polling the probe again.
+        terminal_sender.send(FrameEvent::Frame(late_frame));
+        assert!(
+            !matches!(&*inspected.borrow(), FrameEvent::Frame(_)),
+            "late frame replaced terminal state"
+        );
+        // The feeder also remains alive; bounded error return does not prove SFU cleanup succeeded.
+        let result = tokio::time::timeout(Duration::from_secs(12), &mut probe).await;
+        feeder.abort();
+        assert!(
+            matches!(result, Ok(Err(MediaError::Capture))),
+            "{terminal:?}: {result:?}"
+        );
+    }
+}
